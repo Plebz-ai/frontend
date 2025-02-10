@@ -1,0 +1,3 @@
+Commit #17: docs(characters): update documentation
+Date: 2025-02-10
+Description: Changes made for the characters component as part of the AI Character Platform project.
