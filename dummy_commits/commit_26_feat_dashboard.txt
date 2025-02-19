@@ -1,0 +1,3 @@
+Commit #26: feat(dashboard): add profiles functionality
+Date: 2025-02-19
+Description: Changes made for the dashboard component as part of the AI Character Platform project.
