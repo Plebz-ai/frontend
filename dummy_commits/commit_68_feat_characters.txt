@@ -1,0 +1,3 @@
+Commit #68: feat(characters): add voice selection functionality
+Date: 2025-04-02
+Description: Changes made for the characters component as part of the AI Character Platform project.
