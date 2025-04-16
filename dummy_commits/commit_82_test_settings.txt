@@ -1,0 +1,3 @@
+Commit #82: test(settings): add unit tests
+Date: 2025-04-16
+Description: Changes made for the settings component as part of the AI Character Platform project.
