@@ -1,0 +1,20 @@
+/* Styles for dd */
+
+.dd-container {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dd-title {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #333;
+}
+
+@media (max-width: 768px) {
+  .dd-container {
+    padding: 0.5rem;
+  }
+}
