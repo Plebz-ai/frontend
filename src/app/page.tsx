@@ -36,21 +36,16 @@ const features = [
 
 export default function Home() {
   return (
-    <div className="relative min-h-screen bg-gray-50">
-      {/* Background gradient */}
-      <div className="absolute inset-x-0 -top-40 -z-10 transform-gpu overflow-hidden blur-3xl sm:-top-80">
-        <div className="relative left-[calc(50%-11rem)] aspect-[1155/678] w-[36.125rem] -translate-x-1/2 rotate-[30deg] bg-gradient-to-tr from-[#ff80b5] to-[#9089fc] opacity-30 sm:left-[calc(50%-30rem)] sm:w-[72.1875rem]" />
-      </div>
-
+    <div className="relative min-h-screen">
       {/* Hero section */}
       <div className="relative px-6 lg:px-8">
         <div className="mx-auto max-w-3xl pt-20 pb-32 sm:pt-48 sm:pb-40">
           <div>
             <div className="hidden sm:mb-8 sm:flex sm:justify-center">
               <div className="relative overflow-hidden rounded-full py-1.5 px-4 text-sm leading-6 ring-1 ring-gray-900/10 hover:ring-gray-900/20">
-                <span className="text-gray-600">
+                <span className="text-gray-200">
                   Experience the future of AI companionship.{' '}
-                  <Link href="/explore" className="font-semibold text-indigo-600">
+                  <Link href="/explore" className="font-semibold text-indigo-400">
                     <span className="absolute inset-0" aria-hidden="true" />
                     Explore characters <span aria-hidden="true">&rarr;</span>
                   </Link>
@@ -62,7 +57,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl"
+                className="text-4xl font-bold tracking-tight text-white sm:text-6xl"
               >
                 Create Your Perfect AI Companion
               </motion.h1>
@@ -70,7 +65,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="mt-6 text-lg leading-8 text-gray-600"
+                className="mt-6 text-lg leading-8 text-gray-300"
               >
                 Generate unique AI characters and interact with them through seamless speech and video calls. 
                 Build meaningful connections in a new era of digital companionship.
@@ -87,7 +82,7 @@ export default function Home() {
                 >
                   Create Character
                 </Link>
-                <Link href="/explore" className="text-base font-semibold leading-6 text-gray-900">
+                <Link href="/explore" className="text-base font-semibold leading-6 text-gray-200">
                   Explore Characters <span aria-hidden="true">→</span>
                 </Link>
               </motion.div>
@@ -102,7 +97,7 @@ export default function Home() {
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-base font-semibold leading-7 text-indigo-600"
+            className="text-base font-semibold leading-7 text-indigo-400"
           >
             Advanced Features
           </motion.h2>
@@ -110,7 +105,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl"
+            className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl"
           >
             Everything you need to create and interact with AI characters
           </motion.p>
@@ -125,24 +120,19 @@ export default function Home() {
                 transition={{ delay: 0.2 + index * 0.1 }}
                 className="flex flex-col"
               >
-                <dt className="text-lg font-semibold leading-7 text-gray-900">
+                <dt className="text-lg font-semibold leading-7 text-white">
                   <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white">
                     {feature.icon}
                   </div>
                   {feature.title}
                 </dt>
-                <dd className="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-600">
+                <dd className="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-300">
                   <p className="flex-auto">{feature.description}</p>
                 </dd>
               </motion.div>
             ))}
           </dl>
         </div>
-      </div>
-
-      {/* Bottom gradient */}
-      <div className="absolute inset-x-0 bottom-0 -z-10 transform-gpu overflow-hidden blur-3xl">
-        <div className="relative left-[calc(50%+3rem)] aspect-[1155/678] w-[36.125rem] -translate-x-1/2 bg-gradient-to-tr from-[#ff80b5] to-[#9089fc] opacity-30 sm:left-[calc(50%+36rem)] sm:w-[72.1875rem]" />
       </div>
     </div>
   )
