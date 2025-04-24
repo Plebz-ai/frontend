@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
@@ -11,13 +11,15 @@ import { useSidebar } from '@/lib/sidebar-context'
 
 export default function Sidebar() {
   const pathname = usePathname()
-  const { user } = useAuth()
-  const { collapsed, setCollapsed } = useSidebar()
+  const { user, logout } = useAuth()
+  const { collapsed, setCollapsed, refreshTrigger, refreshCharacters } = useSidebar()
   const [characters, setCharacters] = useState<Character[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [isMounted, setIsMounted] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
 
   // Group characters by time
   const today = new Date()
@@ -36,6 +38,7 @@ export default function Sidebar() {
       try {
         setLoading(true)
         const data = await characterApi.list()
+        console.log('Characters from API:', data)
         setCharacters(data)
         setError(null)
       } catch (err) {
@@ -47,18 +50,49 @@ export default function Sidebar() {
     }
 
     fetchCharacters()
-  }, [])
+  }, [refreshTrigger])
 
-  // Group characters by time period (simulated for now)
-  const todayChars = characters.slice(0, 2)
-  const yesterdayChars = characters.slice(2, 4)
-  const thisWeekChars = characters.slice(4, 6)
-  const lastWeekChars = characters.slice(6)
+  // Group characters by time period based on actual creation dates
+  const todayChars = characters.filter(char => {
+    const createdDate = new Date(char.created_at);
+    return createdDate.toDateString() === today.toDateString();
+  });
+  
+  const yesterdayChars = characters.filter(char => {
+    const createdDate = new Date(char.created_at);
+    return createdDate.toDateString() === yesterday.toDateString();
+  });
+  
+  const thisWeekChars = characters.filter(char => {
+    const createdDate = new Date(char.created_at);
+    return createdDate > lastWeek && 
+           createdDate.toDateString() !== today.toDateString() && 
+           createdDate.toDateString() !== yesterday.toDateString();
+  });
+  
+  const lastWeekChars = characters.filter(char => {
+    const createdDate = new Date(char.created_at);
+    return createdDate <= lastWeek;
+  });
 
   // Filter characters based on search query
   const filteredCharacters = characters.filter(char => 
     char.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Add click outside handler for user menu
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
 
   // Character item component
   const CharacterItem = ({ character }: { character: Character }) => {
@@ -116,7 +150,7 @@ export default function Sidebar() {
   }
 
   // Only show sidebar on character pages
-  if (pathname === '/' || pathname === '/login' || pathname === '/signup') {
+  if (pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname.includes('/forgot-password')) {
     return null
   }
 
@@ -143,12 +177,23 @@ export default function Sidebar() {
             character.ai
           </Link>
         )}
-        <button 
-          onClick={() => setCollapsed(!collapsed)} 
-          className="p-1.5 text-gray-400 hover:text-white transition-colors"
-        >
-          {collapsed ? <FaChevronRight size={16} /> : <FaChevronLeft size={16} />}
-        </button>
+        <div className="flex items-center">
+          <button 
+            onClick={() => refreshCharacters()} 
+            className="p-1.5 text-gray-400 hover:text-white transition-colors mr-1"
+            title="Refresh characters"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button 
+            onClick={() => setCollapsed(!collapsed)} 
+            className="p-1.5 text-gray-400 hover:text-white transition-colors"
+          >
+            {collapsed ? <FaChevronRight size={16} /> : <FaChevronLeft size={16} />}
+          </button>
+        </div>
       </div>
       
       {/* Create and discover buttons */}
@@ -282,7 +327,7 @@ export default function Sidebar() {
       )}
       
       {/* User profile */}
-      <div className="p-4 mt-1 border-t border-[#1f2026]">
+      <div className="p-4 mt-1 border-t border-[#1f2026]" ref={userMenuRef}>
         <div className={`flex items-center ${collapsed ? 'justify-center' : ''}`}>
           <div className="w-10 h-10 rounded-full bg-[#301e63] flex items-center justify-center text-white font-bold text-sm">
             {collapsed ? 'N' : 'S'}
@@ -295,13 +340,31 @@ export default function Sidebar() {
           )}
           
           {!collapsed && (
-            <button className="p-1.5 rounded-full text-gray-400 hover:text-white transition-colors">
+            <button 
+              className="p-1.5 rounded-full text-gray-400 hover:text-white transition-colors"
+              onClick={() => setShowUserMenu(!showUserMenu)}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
             </button>
           )}
         </div>
+        
+        {/* User dropdown menu */}
+        {!collapsed && showUserMenu && (
+          <div className="absolute bottom-20 left-4 right-4 bg-[#1D1F25] rounded-lg shadow-lg border border-gray-800 overflow-hidden z-50">
+            <button 
+              onClick={logout} 
+              className="w-full px-4 py-3 flex items-center text-white hover:bg-[#2a2c36] transition-colors text-left"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Logout
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   )

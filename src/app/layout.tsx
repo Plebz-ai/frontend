@@ -15,12 +15,13 @@ function MainContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { collapsed } = useSidebar()
   const isLandingPage = pathname === '/'
+  const isAuthPage = pathname === '/login' || pathname === '/signup' || pathname.includes('/forgot-password')
   
   return (
     <>
       {isLandingPage && <Navbar />}
       
-      {isLandingPage ? (
+      {isLandingPage || isAuthPage ? (
         <main className="min-h-screen">
           {children}
         </main>
@@ -61,8 +62,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="h-full">
-      <body className={`${inter.className} h-full`}>
+    <html lang="en" className="h-full bg-[#0a0b0e]">
+      <body className={`${inter.className} h-full bg-[#0a0b0e]`}>
         <div className="bg-effect"></div>
         <AuthProvider>
           <MainLayout>

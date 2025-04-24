@@ -204,7 +204,9 @@ export const characterApi = {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    const response = await fetch(`${API_BASE_URL}/characters`, {
+    // Add cache-busting parameter to avoid browser caching
+    const timestamp = new Date().getTime();
+    const response = await fetch(`${API_BASE_URL}/characters?t=${timestamp}`, {
       headers
     });
     

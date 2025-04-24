@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { UserCircle } from 'lucide-react'
+import { useSidebar } from '@/lib/sidebar-context'
 
 
 interface FormData {
@@ -138,6 +139,7 @@ const GENDER_OPTIONS = [
 
 export default function CharacterCreationForm() {
   const router = useRouter()
+  const { refreshCharacters } = useSidebar()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -177,6 +179,7 @@ export default function CharacterCreationForm() {
       const character = await characterApi.create(formData)
       
       console.log('Character created:', character)
+      refreshCharacters()
       router.push(`/characters/${character.id}`)
     } catch (err) {
       console.error('Error creating character:', err)
@@ -264,10 +267,7 @@ export default function CharacterCreationForm() {
           <div>
             <button
               type="button"
-              onClick={() => {
-                const form = document.getElementById('character-form') as HTMLFormElement;
-                if (form) form.submit();
-              }}
+              onClick={handleSubmit}
               className={`px-6 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-medium rounded-lg shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 flex items-center ${
                 isGenerating ? 'opacity-75 cursor-not-allowed' : ''
               }`}
