@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createWebSocketClient } from '../../lib/websocket'
 import { Character } from '../../lib/api'
-import { FaMicrophone, FaMicrophoneSlash, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle } from 'react-icons/fa'
+import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle } from 'react-icons/fa'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 
 type CallState = 'idle' | 'connecting' | 'connected' | 'error' | 'ended'
