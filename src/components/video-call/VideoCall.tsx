@@ -554,14 +554,6 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
             {callState === 'connected' && (
               <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
                 <button
-                  onClick={toggleMute}
-                  className={`p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-white ${
-                    isMuted ? 'bg-red-600' : 'bg-gray-800'
-                  } text-white`}
-                >
-                  {isMuted ? <FaMicrophoneSlash className="w-5 h-5" /> : <FaMicrophone className="w-5 h-5" />}
-                </button>
-                <button
                   onMouseDown={handleStartRecording}
                   onMouseUp={handleStopRecording}
                   onTouchStart={handleStartRecording}
