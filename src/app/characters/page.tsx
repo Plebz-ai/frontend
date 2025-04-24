@@ -6,11 +6,13 @@ import CharacterCard from '@/components/character/CharacterCard';
 import { Character } from '@/types/character';
 import { useRouter } from 'next/navigation';
 import { characterApi } from '@/lib/api';
+import { FaPlus, FaSearch } from 'react-icons/fa';
 
 export default function CharactersPage() {
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const router = useRouter();
   
   // Categorized characters
@@ -65,18 +67,24 @@ export default function CharactersPage() {
     fetchCharacters();
   }, [router]);
   
+  // Filter characters based on search query
+  const filteredCharacters = allCharacters.filter(char => 
+    char.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    char.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   // Render a category section
   const renderSection = (title: string, characters: Character[], isEmpty: boolean) => (
-    <div className="mb-16">
-      <h2 className="text-2xl font-bold text-white mb-6">{title}</h2>
+    <div className="mb-12">
+      <h2 className="text-2xl font-bold text-white mb-5">{title}</h2>
       {characters.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {characters.map((character) => (
             <CharacterCard key={character.id} character={character} />
           ))}
         </div>
       ) : isEmpty ? (
-        <div className="p-6 bg-gray-900/50 rounded-lg text-center">
+        <div className="p-6 bg-[#151722] rounded-xl text-center border border-[#292d3e]">
           <p className="text-gray-400">No characters found. Create some to get started!</p>
         </div>
       ) : (
@@ -88,19 +96,39 @@ export default function CharactersPage() {
   );
 
   return (
-    <div className="min-h-screen py-8">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center mb-10">
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            AI Characters
-          </h1>
-          <Link 
-            href="/create" 
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-          >
-            Create Character
-          </Link>
-        </div>
+    <div className="min-h-screen bg-[#0d0f17]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-white mb-2">
+              Welcome back
+            </h1>
+            <p className="text-gray-400">Discover and chat with AI characters</p>
+          </div>
+          
+          <div className="flex gap-3 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FaSearch className="h-4 w-4 text-gray-500" />
+              </div>
+              <input
+                type="text"
+                placeholder="Search Characters"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#151722] text-gray-300 pl-9 pr-3 py-2 rounded-xl border border-[#292d3e] focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 placeholder-gray-500"
+              />
+            </div>
+            
+            <Link 
+              href="/create" 
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-md"
+            >
+              <FaPlus className="h-3.5 w-3.5" />
+              <span>Create</span>
+            </Link>
+          </div>
+        </header>
 
         {loading && allCharacters.length === 0 ? (
           <div className="flex justify-center py-20">
@@ -113,16 +141,32 @@ export default function CharactersPage() {
           </div>
         ) : allCharacters.length === 0 ? (
           <div className="text-center py-20">
-            <h3 className="mt-2 text-lg font-medium text-white">No characters found</h3>
-            <p className="mt-1 text-sm text-gray-400">Start by creating your first AI character.</p>
-            <div className="mt-6">
+            <div className="bg-[#151722] p-8 rounded-xl border border-[#292d3e] max-w-md mx-auto">
+              <h3 className="text-xl font-medium text-white mb-3">No characters yet</h3>
+              <p className="text-gray-400 mb-6">Start by creating your first AI character.</p>
               <Link
                 href="/create"
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-md"
               >
-                Create Character
+                <FaPlus className="h-3.5 w-3.5" />
+                <span>Create Character</span>
               </Link>
             </div>
+          </div>
+        ) : searchQuery ? (
+          <div className="mb-12">
+            <h2 className="text-xl font-bold text-white mb-5">Search Results</h2>
+            {filteredCharacters.length > 0 ? (
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {filteredCharacters.map((character) => (
+                  <CharacterCard key={character.id} character={character} />
+                ))}
+              </div>
+            ) : (
+              <div className="p-6 bg-[#151722] rounded-xl text-center border border-[#292d3e]">
+                <p className="text-gray-400">No characters found matching "{searchQuery}"</p>
+              </div>
+            )}
           </div>
         ) : (
           <>

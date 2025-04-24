@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('auth_token', data.token);
       
       setUser(data.user);
-      router.push('/');
+      router.push('/explore');
     } catch (error) {
       console.error('Login error:', error);
       throw error;
@@ -124,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('auth_token', data.token);
       
       setUser(data.user);
-      router.push('/');
+      router.push('/explore');
     } catch (error) {
       console.error('Signup error:', error);
       throw error;

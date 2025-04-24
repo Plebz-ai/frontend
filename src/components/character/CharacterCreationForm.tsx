@@ -5,6 +5,9 @@ import { motion } from 'framer-motion'
 import { characterApi } from '../../lib/api'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import Link from 'next/link'
+import { UserCircle } from 'lucide-react'
+
 
 interface FormData {
   name: string
@@ -16,82 +19,121 @@ interface FormData {
   voice_type: string
   tags: string[]
   avatar?: File | null
+  gender: string
+  isFiltered: boolean
 }
 
 interface InputFieldProps {
-  name: string
-  value: string
-  placeholder: string
-  limit: number
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  label: string;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+  maxLength: number;
+  currentLength?: number;
+  required?: boolean;
+  placeholder?: string;
+  type?: string;
 }
-
-const InputField = memo(({ 
-  name, 
-  value, 
-  placeholder, 
-  limit, 
-  onChange 
-}: InputFieldProps) => (
-  <div className="relative w-full">
-    <input
-      type="text"
-      name={name}
-      id={name}
-      value={value}
-      onChange={onChange}
-      className="w-full bg-[#1e1e24] text-white border-0 py-3 px-4 rounded-md focus:ring-1 focus:ring-indigo-500 focus:outline-none text-base placeholder-gray-500"
-      placeholder={placeholder}
-      required
-    />
-    <div className="absolute top-3 right-4 text-xs text-gray-500">
-      {value.length}/{limit}
-    </div>
-  </div>
-));
-
-InputField.displayName = 'InputField';
 
 interface TextAreaFieldProps {
-  name: string 
-  value: string
-  placeholder: string
-  limit: number
-  rows?: number
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  label: string;
+  name: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+  maxLength: number;
+  currentLength?: number;
+  required?: boolean;
+  placeholder?: string;
+  rows?: number;
 }
 
-const TextAreaField = memo(({ 
-  name, 
-  value, 
-  placeholder, 
-  limit, 
-  rows = 4,
-  onChange 
-}: TextAreaFieldProps) => (
-  <div className="relative w-full">
-    <textarea
-      name={name}
-      id={name}
-      rows={rows}
-      value={value}
-      onChange={onChange}
-      className="w-full bg-[#1e1e24] text-white border-0 py-3 px-4 rounded-md focus:ring-1 focus:ring-indigo-500 focus:outline-none text-base placeholder-gray-500"
-      placeholder={placeholder}
-      required
-    />
-    <div className="absolute top-3 right-4 text-xs text-gray-500">
-      {value.length}/{limit}
+const InputField: React.FC<InputFieldProps> = ({
+  label,
+  name,
+  value,
+  onChange,
+  maxLength,
+  currentLength = 0,
+  required = false,
+  placeholder = '',
+  type = 'text'
+}) => {
+  return (
+    <div className="mb-4">
+      <label htmlFor={name} className="block text-sm font-medium text-gray-300 mb-2">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <input
+        type={type}
+        id={name}
+        name={name}
+        className="w-full px-4 py-3 bg-[#0d0f16] border border-gray-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-lg shadow-sm text-white placeholder-gray-500 transition-all duration-200"
+        value={value}
+        onChange={onChange}
+        maxLength={maxLength}
+        required={required}
+        placeholder={placeholder}
+      />
+      {maxLength && (
+        <div className="flex justify-end mt-1.5">
+          <span className={`text-xs ${currentLength > maxLength * 0.9 ? 'text-yellow-400' : 'text-gray-500'}`}>
+            {currentLength}/{maxLength}
+          </span>
+        </div>
+      )}
     </div>
-  </div>
-));
+  );
+};
 
-TextAreaField.displayName = 'TextAreaField';
+const TextAreaField: React.FC<TextAreaFieldProps> = ({
+  label,
+  name,
+  value,
+  onChange,
+  maxLength,
+  currentLength = 0,
+  required = false,
+  placeholder = '',
+  rows = 4
+}) => {
+  return (
+    <div className="mb-4">
+      <label htmlFor={name} className="block text-sm font-medium text-gray-300 mb-2">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      <textarea
+        id={name}
+        name={name}
+        className="w-full px-4 py-3 bg-[#0d0f16] border border-gray-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-lg shadow-sm text-white placeholder-gray-500 transition-all duration-200"
+        value={value}
+        onChange={onChange}
+        maxLength={maxLength}
+        required={required}
+        placeholder={placeholder}
+        rows={rows}
+      />
+      {maxLength && (
+        <div className="flex justify-end mt-1.5">
+          <span className={`text-xs ${currentLength > maxLength * 0.9 ? 'text-yellow-400' : 'text-gray-500'}`}>
+            {currentLength}/{maxLength}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const VOICE_TYPES = [
   { value: 'natural', label: 'Natural', description: 'Human-like voice with natural intonation' },
   { value: 'robotic', label: 'Robotic', description: 'Mechanical, AI-like voice' },
   { value: 'animated', label: 'Animated', description: 'Expressive, cartoon-like voice' }
+]
+
+const GENDER_OPTIONS = [
+  { value: 'male', label: 'Male' },
+  { value: 'female', label: 'Female' },
+  { value: 'non-binary', label: 'Non-binary' },
+  { value: 'other', label: 'Other' }
 ]
 
 export default function CharacterCreationForm() {
@@ -106,10 +148,15 @@ export default function CharacterCreationForm() {
     personality: '',
     voice_type: '',
     tags: [],
-  })
+    gender: '',
+    avatar: null,
+      isFiltered: true
+    })
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tagInput, setTagInput] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Character count limits
   const limits = {
@@ -163,215 +210,386 @@ export default function CharacterCreationForm() {
   }
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0]
-      setFormData(prev => ({ ...prev, avatar: file }))
-      
-      // Create a preview URL
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setAvatarPreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAvatarPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
-  }
+  };
+
+  const handleAddTag = () => {
+    if (tagInput.trim() && !formData.tags.includes(tagInput.trim())) {
+      setFormData({
+        ...formData,
+        tags: [...formData.tags, tagInput.trim()]
+      });
+      setTagInput("");
+    }
+  };
+  
+  const handleRemoveTag = (tagToRemove: string) => {
+    setFormData({
+      ...formData,
+      tags: formData.tags.filter(tag => tag !== tagToRemove)
+    });
+  };
+  
+  const handleRemoveAvatar = () => {
+    setAvatarPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl mx-auto p-6 bg-[#1f1c26] rounded-xl shadow-lg">
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-lg bg-red-900/50 p-4 border border-red-700 mb-6"
-        >
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-red-200">{error}</p>
-            </div>
-          </div>
-        </motion.div>
-      )}
-      
-      <div className="space-y-6">
-        {/* Avatar upload */}
-        <div className="flex flex-col items-center mb-6">
-          <div 
-            onClick={handleAvatarClick}
-            className="cursor-pointer relative w-24 h-24 rounded-full overflow-hidden bg-[#2b303b] mb-2 flex items-center justify-center"
-          >
-            {avatarPreview ? (
-              <Image 
-                src={avatarPreview} 
-                alt="Avatar preview" 
-                fill 
-                className="object-cover"
-              />
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            )}
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              accept="image/*"
-              onChange={handleAvatarChange}
-            />
-          </div>
-          <h3 className="text-white font-medium text-center">Character name</h3>
-        </div>
-
-        {/* Name field */}
-        <InputField 
-          name="name"
-          value={formData.name}
-          placeholder="e.g. Albert Einstein"
-          limit={limits.name}
-          onChange={handleInputChange}
-        />
-
-        {/* Tagline */}
-        <div>
-          <label htmlFor="tagline" className="block text-white mb-2">
-            Tagline
-          </label>
-          <InputField 
-            name="tagline"
-            value={formData.tagline}
-            placeholder="Add a short tagline of your Character"
-            limit={limits.tagline}
-            onChange={handleInputChange}
-          />
-        </div>
-
-        {/* Description */}
-        <div>
-          <label htmlFor="description" className="block text-white mb-2">
-            Description
-          </label>
-          <TextAreaField 
-            name="description"
-            value={formData.description}
-            placeholder="How would your Character describe themselves?"
-            limit={limits.description}
-            onChange={handleInputChange}
-          />
-        </div>
-
-        {/* Personality */}
-        <div>
-          <label htmlFor="personality" className="block text-white mb-2">
-            Personality Traits
-          </label>
-          <InputField 
-            name="personality"
-            value={formData.personality}
-            placeholder="e.g. curious, witty, compassionate (comma-separated)"
-            limit={100}
-            onChange={handleInputChange}
-          />
-        </div>
-
-        {/* Greeting */}
-        <div>
-          <label htmlFor="greeting" className="block text-white mb-2">
-            Greeting
-          </label>
-          <TextAreaField 
-            name="greeting"
-            value={formData.greeting}
-            placeholder="e.g. Hello, I am Albert. Ask me anything about my scientific contributions."
-            limit={limits.greeting}
-            onChange={handleInputChange}
-          />
-          
-          <div className="mt-3 flex items-center">
-            <input
-              type="checkbox"
-              id="dynamicGreetings"
-              name="dynamicGreetings"
-              checked={formData.dynamicGreetings}
-              onChange={handleCheckboxChange}
-              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 rounded"
-            />
-            <label htmlFor="dynamicGreetings" className="ml-2 text-white flex items-center">
-              Allow dynamic greetings
-              <span className="ml-1 inline-flex">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        {/* Voice */}
-        <div>
-          <label htmlFor="voice_type" className="block text-white mb-2">
-            Voice
-          </label>
-          <div className="relative">
-            <select
-              name="voice_type"
-              id="voice_type"
-              value={formData.voice_type}
-              onChange={handleInputChange}
-              className="block w-full bg-[#1e1e24] text-white border-0 py-3 px-4 pr-10 rounded-md focus:ring-1 focus:ring-indigo-500 focus:outline-none appearance-none"
+    <div className="bg-[#0a0b0e] flex flex-col">
+      {/* Header */}
+      <header className="bg-[#07080a] border-b border-gray-800 py-3 px-6">
+        <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button 
+              onClick={() => router.back()} 
+              className="text-gray-400 hover:text-white transition-colors p-2"
             >
-              <option value="">Select a voice</option>
-              {VOICE_TYPES.map((voice) => (
-                <option key={voice.value} value={voice.value}>
-                  {voice.label}
-                </option>
-              ))}
-            </select>
-            <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none">
-              <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
               </svg>
-            </div>
+            </button>
+            <h1 className="text-2xl font-bold text-white">Create Your AI Character</h1>
+          </div>
+          
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                const form = document.getElementById('character-form') as HTMLFormElement;
+                if (form) form.submit();
+              }}
+              className={`px-6 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-medium rounded-lg shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 flex items-center ${
+                isGenerating ? 'opacity-75 cursor-not-allowed' : ''
+              }`}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Creating...
+                </>
+              ) : (
+                'Create Character'
+              )}
+            </button>
           </div>
         </div>
-        
-        {/* Tags */}
-        <div>
-          <label htmlFor="tags" className="block text-white mb-2">
-            Tags
-          </label>
-          <input
-            type="text"
-            name="tags"
-            id="tags"
-            value={formData.tags.join(', ')}
-            onChange={(e) => {
-              // Split by commas and trim whitespace
-              const tagArray = e.target.value.split(',').map(tag => tag.trim()).filter(Boolean);
-              setFormData(prev => ({ ...prev, tags: tagArray }));
-            }}
-            className="w-full bg-[#1e1e24] text-white border-0 py-3 px-4 rounded-md focus:ring-1 focus:ring-indigo-500 focus:outline-none text-base placeholder-gray-500"
-            placeholder="Add tags to make your character discoverable (comma-separated)"
-          />
+      </header>
+
+      {/* Main content */}
+      <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-lg bg-red-900/30 p-4 border border-red-800 mb-4"
+            >
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-red-200">{error}</p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          <form id="character-form" onSubmit={handleSubmit} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Left column with avatar upload */}
+              <div className="md:col-span-1">
+                <div className="flex flex-col items-center">
+                  <div 
+                    onClick={handleAvatarClick}
+                    className="cursor-pointer relative w-36 h-36 md:w-40 md:h-40 rounded-full overflow-hidden bg-[#0c0d10] border-2 border-gray-800 hover:border-indigo-500 transition-all duration-200 flex items-center justify-center group shadow-lg"
+                  >
+                    {avatarPreview ? (
+                      <Image 
+                        src={avatarPreview} 
+                        alt="Avatar preview" 
+                        fill 
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-[#0c0d10] group-hover:bg-[#12141a] transition-colors duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 text-gray-600 group-hover:text-indigo-400 transition-colors duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                      </div>
+                    )}
+                    
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                    />
+                  </div>
+                  <h2 className="mt-3 text-lg font-medium text-white">Character Avatar</h2>
+                  <p className="text-xs text-gray-400 mt-1 text-center">Upload an image for your character</p>
+                </div>
+              </div>
+
+              {/* Right column with form fields in 2 columns */}
+              <div className="md:col-span-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Name field */}
+                  <div>
+                    <div className="mb-1 flex justify-between items-baseline">
+                      <label htmlFor="name" className="block text-gray-300 font-medium">
+                        Character Name
+                      </label>
+                      <span className="text-xs text-gray-500">{formData.name.length}/{limits.name}</span>
+                    </div>
+                    <input
+                      type="text"
+                      name="name"
+                      id="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none text-base placeholder-gray-500 transition-all duration-200 shadow-sm"
+                      placeholder="e.g. Albert Einstein"
+                      required
+                    />
+                  </div>
+
+                  {/* Tagline */}
+                  <div>
+                    <div className="mb-1 flex justify-between items-baseline">
+                      <label htmlFor="tagline" className="block text-gray-300 font-medium">
+                        Tagline
+                      </label>
+                      <span className="text-xs text-gray-500">{formData.tagline.length}/{limits.tagline}</span>
+                    </div>
+                    <input
+                      type="text"
+                      name="tagline"
+                      id="tagline"
+                      value={formData.tagline}
+                      onChange={handleInputChange}
+                      className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none text-base placeholder-gray-500 transition-all duration-200 shadow-sm"
+                      placeholder="Add a short tagline for your character"
+                      required
+                    />
+                  </div>
+
+                  {/* Description - spans both columns */}
+                  <div className="md:col-span-2">
+                    <div className="mb-1 flex justify-between items-baseline">
+                      <label htmlFor="description" className="block text-gray-300 font-medium">
+                        Description
+                      </label>
+                      <span className="text-xs text-gray-500">{formData.description.length}/{limits.description}</span>
+                    </div>
+                    <textarea
+                      name="description"
+                      id="description"
+                      rows={4}
+                      value={formData.description}
+                      onChange={handleInputChange}
+                      className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none text-base placeholder-gray-500 transition-all duration-200 shadow-sm"
+                      placeholder="How would your character describe themselves?"
+                      required
+                    />
+                  </div>
+
+                  {/* Personality */}
+                  <div>
+                    <div className="mb-1 flex justify-between items-baseline">
+                      <label htmlFor="personality" className="block text-gray-300 font-medium">
+                        Personality Traits
+                      </label>
+                      <span className="text-xs text-gray-500">{formData.personality.length}/{limits.personality}</span>
+                    </div>
+                    <input
+                      type="text"
+                      name="personality"
+                      id="personality"
+                      value={formData.personality}
+                      onChange={handleInputChange}
+                      className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none text-base placeholder-gray-500 transition-all duration-200 shadow-sm"
+                      placeholder="e.g. curious, witty, compassionate"
+                      required
+                    />
+                  </div>
+
+                  {/* Gender */}
+                  <div>
+                    <div className="mb-1">
+                      <label htmlFor="gender" className="block text-gray-300 font-medium">
+                        Gender
+                      </label>
+                    </div>
+                    <div className="relative">
+                      <select
+                        name="gender"
+                        id="gender"
+                        value={formData.gender}
+                        onChange={handleInputChange}
+                        className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 pr-10 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none appearance-none transition-all duration-200 shadow-sm"
+                      >
+                        <option value="">Select gender</option>
+                        {GENDER_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
+                        <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Voice */}
+                  <div>
+                    <div className="mb-1">
+                      <label htmlFor="voice_type" className="block text-gray-300 font-medium">
+                        Voice
+                      </label>
+                    </div>
+                    <div className="relative">
+                      <select
+                        name="voice_type"
+                        id="voice_type"
+                        value={formData.voice_type}
+                        onChange={handleInputChange}
+                        className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 pr-10 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none appearance-none transition-all duration-200 shadow-sm"
+                      >
+                        <option value="">Select a voice</option>
+                        {VOICE_TYPES.map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
+                        <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Greeting - spans both columns */}
+                  <div className="md:col-span-2">
+                    <div className="mb-1 flex justify-between items-baseline">
+                      <label htmlFor="greeting" className="block text-gray-300 font-medium">
+                        Greeting
+                      </label>
+                      <span className="text-xs text-gray-500">{formData.greeting.length}/{limits.greeting}</span>
+                    </div>
+                    <textarea
+                      name="greeting"
+                      id="greeting"
+                      rows={3}
+                      value={formData.greeting}
+                      onChange={handleInputChange}
+                      className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none text-base placeholder-gray-500 transition-all duration-200 shadow-sm"
+                      placeholder="e.g. Hello, I am Albert. Ask me anything about my scientific contributions."
+                      required
+                    />
+                    
+                    <div className="flex flex-wrap gap-x-6 mt-2">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="dynamicGreetings"
+                          name="dynamicGreetings"
+                          checked={formData.dynamicGreetings}
+                          onChange={handleCheckboxChange}
+                          className="h-4 w-4 text-indigo-500 focus:ring-indigo-400 rounded border-gray-700 bg-gray-900"
+                        />
+                        <label htmlFor="dynamicGreetings" className="ml-2 text-sm text-gray-300 flex items-center">
+                          Dynamic greetings
+                          <span className="ml-1 inline-flex items-center justify-center rounded-full bg-gray-800 p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </span>
+                        </label>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="isFiltered"
+                          name="isFiltered"
+                          checked={formData.isFiltered}
+                          onChange={handleCheckboxChange}
+                          className="h-4 w-4 text-indigo-500 focus:ring-indigo-400 rounded border-gray-700 bg-gray-900"
+                        />
+                        <label htmlFor="isFiltered" className="ml-2 text-sm text-gray-300 flex items-center group relative">
+                          Content filter
+                          <span className="ml-1 inline-flex items-center justify-center rounded-full bg-gray-800 p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </span>
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity absolute left-0 -bottom-8 bg-gray-800 text-xs text-gray-300 p-1.5 rounded whitespace-nowrap z-10">
+                            Filters inappropriate content
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Tags - spans both columns */}
+                  <div className="md:col-span-2">
+                    <div className="mb-1">
+                      <label htmlFor="tags" className="block text-gray-300 font-medium">
+                        Tags
+                      </label>
+                    </div>
+                    <input
+                      type="text"
+                      name="tags"
+                      id="tags"
+                      value={formData.tags.join(', ')}
+                      onChange={(e) => {
+                        // Split by commas and trim whitespace
+                        const tagArray = e.target.value.split(',').map(tag => tag.trim()).filter(Boolean);
+                        setFormData(prev => ({ ...prev, tags: tagArray }));
+                      }}
+                      className="w-full bg-[#0c0d10] text-white border border-gray-800 py-3 px-4 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-500 focus:outline-none text-base placeholder-gray-500 transition-all duration-200 shadow-sm"
+                      placeholder="Add tags to make your character discoverable (comma-separated)"
+                    />
+                    {formData.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {formData.tags.map((tag, index) => (
+                          <span key={index} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-900/40 text-indigo-300 border border-indigo-800">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
-
-      <div className="mt-8 flex justify-end">
-        <button
-          type="submit"
-          className={`px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-base font-medium rounded-md ${
-            isGenerating ? 'opacity-75 cursor-not-allowed' : ''
-          }`}
-          disabled={isGenerating}
-        >
-          {isGenerating ? 'Creating Character...' : 'Create Character'}
-        </button>
-      </div>
-    </form>
-  )
-} 
+    </div>
+  );
+}

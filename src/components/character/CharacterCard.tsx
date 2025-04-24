@@ -1,9 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Character } from '@/types/character';
 import Image from 'next/image';
+import { motion } from 'framer-motion';
+import { FaComment } from 'react-icons/fa';
 
 interface CharacterCardProps {
   character: Character;
@@ -11,12 +13,13 @@ interface CharacterCardProps {
 
 export default function CharacterCard({ character }: CharacterCardProps) {
   const router = useRouter();
+  const [imageError, setImageError] = useState(false);
   
   // Default placeholder image if no avatar is available
   const avatarSrc = character.avatar_url || '/placeholder-avatar.png';
   
-  // Format view count with abbreviations (k, m)
-  const formatViewCount = (count: number) => {
+  // Format interaction count with abbreviations (k, m)
+  const formatCount = (count: number) => {
     if (count >= 1000000) {
       return (count / 1000000).toFixed(1) + 'm';
     } else if (count >= 1000) {
@@ -25,46 +28,81 @@ export default function CharacterCard({ character }: CharacterCardProps) {
     return count.toString();
   };
   
-  // Default view count for demo (can be replaced with actual data)
-  const viewCount = character.view_count || Math.floor(Math.random() * 10000000);
+  // Default interaction count for demo (can be replaced with actual data)
+  const interactionCount = character.view_count || Math.floor(Math.random() * 1000000);
 
   return (
-    <div
-      className="bg-[#1e1e24] overflow-hidden shadow-lg rounded-xl transition-all hover:shadow-xl cursor-pointer border border-white/5"
+    <motion.div
+      className="group bg-[#151722] overflow-hidden rounded-xl cursor-pointer border border-[#292d3e] hover:border-indigo-500/50 transition-all duration-300"
       onClick={() => router.push(`/characters/${character.id}`)}
+      whileHover={{ 
+        y: -5,
+        transition: { duration: 0.2 }
+      }}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
     >
-      <div className="flex p-4 sm:p-5">
-        {/* Avatar Image */}
-        <div className="flex-shrink-0 mr-4">
-          <div className="h-24 w-24 rounded-lg overflow-hidden relative">
+      {/* Character Image/Avatar */}
+      <div className="w-full aspect-[3/2] relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-t from-[#151722] via-transparent to-transparent z-10"></div>
+        {imageError ? (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-800/30 to-purple-800/30">
+            <span className="text-6xl font-bold text-white/30">{character.name.charAt(0).toUpperCase()}</span>
+          </div>
+        ) : (
+          <div className="w-full h-full relative">
             <Image 
               src={avatarSrc}
               alt={character.name}
               fill
-              className="object-cover"
+              className="object-cover transition-transform duration-500 group-hover:scale-110"
+              onError={() => setImageError(true)}
+              unoptimized={!character.avatar_url} // Skip Next.js optimization for placeholder images
             />
           </div>
-        </div>
+        )}
         
-        {/* Content */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <h3 className="text-xl font-semibold text-white truncate">{character.name}</h3>
-          <p className="text-sm text-gray-400 mb-1">By @{character.creator || 'user'}</p>
-          
-          <p className="text-sm text-gray-300 line-clamp-2 mb-auto">
-            {character.description || "No description available"}
-          </p>
-          
-          {/* Metrics */}
-          <div className="flex items-center mt-2 text-sm text-gray-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            <span>{formatViewCount(viewCount)}</span>
+        {/* Creator badge */}
+        <div className="absolute bottom-3 left-3 z-20">
+          <div className="text-xs px-2 py-1 rounded-full bg-black/60 text-gray-300 backdrop-blur-sm">
+            @{character.creator || 'user'}
           </div>
         </div>
       </div>
-    </div>
+      
+      {/* Character Info */}
+      <div className="p-4">
+        <h3 className="text-lg font-semibold text-white mb-1 truncate group-hover:text-indigo-300 transition-colors">
+          {character.name}
+        </h3>
+        
+        <p className="text-sm text-gray-400 line-clamp-2 mb-3 min-h-[2.5rem]">
+          {character.description || "No description available"}
+        </p>
+        
+        {/* Interaction Stats */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <FaComment className="w-3 h-3" />
+            <span>{formatCount(interactionCount)}</span>
+          </div>
+          
+          <div className="flex flex-wrap gap-1">
+            {character.personality && character.personality.split(',').slice(0, 2).map((trait, index) => (
+              <span 
+                key={index} 
+                className="px-2 py-0.5 text-xs rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-800/30"
+              >
+                {trait.trim()}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      
+      {/* Interactive indicator */}
+      <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+    </motion.div>
   );
 } 

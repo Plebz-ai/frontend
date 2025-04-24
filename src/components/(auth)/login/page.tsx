@@ -41,7 +41,7 @@ export default function LoginPage() {
     
     try {
       await login(data.email, data.password);
-      router.push("/");
+      // Redirect is handled in the auth context
     } catch (error) {
       console.error("Login failed:", error);
       setError(error instanceof Error ? error.message : "Failed to login. Please try again.");

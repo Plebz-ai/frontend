@@ -3,17 +3,15 @@ import React from 'react'
 
 export default function CreateCharacter() {
   return (
-    <div className="min-h-screen py-8">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-3xl">
-          <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl text-center mb-8">
-            Create Your AI Character
-          </h1>
-          
-          <div className="bg-white/10 backdrop-blur-sm shadow-xl rounded-lg overflow-hidden">
-            <div className="p-6 sm:p-8">
-              <CharacterCreationForm />
-            </div>
+    <div className="min-h-screen py-6">
+      <div className="container mx-auto px-4">
+        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl text-center mb-6">
+          Create Your AI Character
+        </h1>
+        
+        <div className="bg-[#0f1117]/80 backdrop-blur-sm shadow-2xl rounded-xl overflow-hidden border border-gray-800">
+          <div className="p-4 sm:p-6">
+            <CharacterCreationForm />
           </div>
         </div>
       </div>

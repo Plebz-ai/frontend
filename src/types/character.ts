@@ -6,6 +6,9 @@ export interface Character {
   voice_type: string;
   created_at: string;
   updated_at: string;
+  avatar_url?: string;
+  view_count?: number;
+  creator?: string;
 }
 
 export interface CreateCharacterRequest {

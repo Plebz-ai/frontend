@@ -23,8 +23,8 @@ export function createWebSocketClient(
   let pingTimeout: NodeJS.Timeout | null = null
   const MAX_RETRIES = 5
   let retryCount = 0
-  const PING_INTERVAL = 25000 // 25 seconds
-  const PING_TIMEOUT = 30000 // Increased from 5000 to 30000 (30 seconds)
+  const PING_INTERVAL = 300000 // Increased to 300000 (5 minutes)
+  const PING_TIMEOUT = 60000 // Increased to 60000 (1 minute)
   let isExplicitlyDisconnected = false
 
   const clearTimeouts = () => {
@@ -50,6 +50,7 @@ export function createWebSocketClient(
       }
     }
 
+    // Only set the ping timeout if ws exists and is not closing
     if (ws && ws.readyState !== WebSocket.CLOSING) {
       pingTimeout = setTimeout(() => {
         console.log('Ping timeout - closing connection')
@@ -79,7 +80,7 @@ export function createWebSocketClient(
     return true
   }
 
-  const connect = (characterId: string, clientId: string) => {
+  const connect = (characterId: string, clientId: string, sessionId?: string) => {
     try {
       if (!validateConnection(characterId, clientId)) {
         onDisconnect()
@@ -94,143 +95,201 @@ export function createWebSocketClient(
       clearTimeouts()
       isExplicitlyDisconnected = false
 
-      const wsUrl = `${WS_URL}?characterId=${characterId}&clientId=${clientId}`
+      // Build the WebSocket URL, including sessionId if provided
+      let wsUrl = `${WS_URL}?characterId=${characterId}&clientId=${clientId}`
+      if (sessionId) {
+        wsUrl += `&sessionId=${sessionId}`
+      }
       console.log('Connecting to WebSocket:', wsUrl)
       
-      try {
-        ws = new WebSocket(wsUrl)
-        console.log('WebSocket instance created, waiting for connection...')
-      } catch (wsError) {
-        console.error('Error creating WebSocket instance:', wsError)
-        onDisconnect()
-        return
-      }
-
-      // Set a connection timeout
-      const connectionTimeout = setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.CONNECTING) {
-          console.error('Connection timeout - closing connection')
-          ws.close(1000, 'Connection timeout')
-        }
-      }, 5000) // 5 second connection timeout
-
-      ws.onopen = () => {
-        clearTimeout(connectionTimeout)
-        console.log('WebSocket connected successfully')
-        retryCount = 0
-        
-        // Start sending pings at regular intervals
-        const pingInterval = setInterval(() => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            heartbeat();
-          } else {
-            clearInterval(pingInterval);
-          }
-        }, PING_INTERVAL);
-        
-        // Store the interval so it can be cleared on close
-        ws.pingInterval = pingInterval;
-        
-        heartbeat(); // Start monitoring connection
-        onConnect()
-      }
-
-      ws.onclose = (event) => {
-        clearTimeout(connectionTimeout)
-        console.log('WebSocket connection closed:', event.code, event.reason)
-        clearTimeouts()
-        
-        // Clear the ping interval if it exists
-        if (ws && ws.pingInterval) {
-          clearInterval(ws.pingInterval);
-          ws.pingInterval = undefined;
-        }
-
-        if (!isExplicitlyDisconnected && retryCount < MAX_RETRIES) {
-          retryCount++
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff
-          console.log(`Attempting to reconnect in ${delay}ms... (attempt ${retryCount}/${MAX_RETRIES})`)
-          reconnectTimeout = setTimeout(() => connect(characterId, clientId), delay)
-        } else {
-          console.log('No more reconnection attempts')
-        }
-
-        onDisconnect()
-      }
-
-      ws.onerror = (event) => {
-        const errorInfo = {
-          message: 'WebSocket connection error occurred',
-          type: event.type,
-          url: wsUrl,
-          readyState: ws ? ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState] : 'null',
-          time: new Date().toISOString(),
-          target: event.target ? 'WebSocket' : 'unknown',
-        };
-        
-        console.error('WebSocket error detected:', errorInfo);
-        
-        // The onclose handler will handle reconnection
-        // Force close if in CONNECTING state to trigger onclose
-        if (ws && ws.readyState === WebSocket.CONNECTING) {
-          try {
-            ws.close(1000, 'Error during connection');
-          } catch (e) {
-            console.error('Error closing socket after error:', e);
-          }
-        }
-      }
-
-      ws.onmessage = (event) => {
+      // Add a small delay before connecting to ensure server is ready
+      setTimeout(() => {
         try {
-          // Handle ping/pong messages without JSON parsing
-          if (typeof event.data === 'string') {
-            // Reset heartbeat on any message
-            heartbeat();
-            
-            if (event.data === '#ping') {
-              if (ws?.readyState === WebSocket.OPEN) {
-                ws.send('#pong')
-              }
-              return
+          ws = new WebSocket(wsUrl)
+          console.log('WebSocket instance created, waiting for connection...')
+        } catch (wsError) {
+          console.error('Error creating WebSocket instance:', wsError)
+          onDisconnect()
+          return
+        }
+
+        // Store a local reference to ws that TypeScript knows is non-null
+        const socket = ws;
+        
+        // Set a connection timeout
+        const connectionTimeout = setTimeout(() => {
+          if (socket && socket.readyState === WebSocket.CONNECTING) {
+            console.error('Connection timeout - closing connection')
+            socket.close(1000, 'Connection timeout')
+          }
+        }, 10000) // Increased from 5000 to 10000 (10 seconds)
+
+        // Only proceed with listeners if ws was successfully created
+        socket.onopen = () => {
+          clearTimeout(connectionTimeout)
+          console.log('WebSocket connected successfully')
+          retryCount = 0
+          
+          // Start sending pings at regular intervals
+          const pingInterval = setInterval(() => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              heartbeat();
+            } else {
+              clearInterval(pingInterval);
             }
-            
+          }, PING_INTERVAL);
+          
+          // Store the interval so it can be cleared on close
+          socket.pingInterval = pingInterval;
+          
+          heartbeat(); // Start monitoring connection
+          onConnect()
+        }
+
+        socket.onclose = (event) => {
+          clearTimeout(connectionTimeout)
+          console.log('WebSocket connection closed:', event.code, event.reason)
+          clearTimeouts()
+          
+          // Clear the ping interval if it exists
+          if (socket.pingInterval) {
+            clearInterval(socket.pingInterval);
+            socket.pingInterval = undefined;
+          }
+
+          if (!isExplicitlyDisconnected && retryCount < MAX_RETRIES) {
+            retryCount++
+            const delay = Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff
+            console.log(`Attempting to reconnect in ${delay}ms... (attempt ${retryCount}/${MAX_RETRIES})`)
+            reconnectTimeout = setTimeout(() => connect(characterId, clientId), delay)
+          } else {
+            console.log('No more reconnection attempts')
+          }
+
+          onDisconnect()
+        }
+
+        socket.onerror = (event) => {
+          const errorInfo = {
+            message: 'WebSocket connection error occurred',
+            type: event.type,
+            url: wsUrl,
+            readyState: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][socket.readyState],
+            time: new Date().toISOString(),
+            target: event.target ? 'WebSocket' : 'unknown',
+          };
+          
+          console.error('WebSocket error detected:', errorInfo);
+          
+          // The onclose handler will handle reconnection
+          // Force close if in CONNECTING state to trigger onclose
+          if (socket.readyState === WebSocket.CONNECTING) {
             try {
-              // Only try to parse as JSON if it's not a ping message
-              const data = JSON.parse(event.data) as WebSocketMessage
+              socket.close(1000, 'Error during connection');
+            } catch (e) {
+              console.error('Error closing socket after error:', e);
+            }
+          }
+        }
+
+        socket.onmessage = (event) => {
+          try {
+            // Handle ping/pong messages without JSON parsing
+            if (typeof event.data === 'string') {
+              // Reset heartbeat on any message
+              heartbeat();
               
-              // Handle pong messages from server
-              if (data.type === 'pong') {
+              if (event.data === '#ping') {
+                if (socket.readyState === WebSocket.OPEN) {
+                  socket.send('#pong')
+                }
+                return
+              }
+              
+              // Check if message contains newlines (server might send multiple JSON objects)
+              if (event.data.includes('\n')) {
+                console.log('Received multiple messages in one WebSocket frame');
+                // Split by newline and process each message
+                const messages = event.data.split('\n').filter(msg => msg.trim() !== '');
+                
+                for (const msgStr of messages) {
+                  try {
+                    // Process each message individually
+                    processMessage(msgStr);
+                  } catch (err) {
+                    console.error('Error processing individual message in batch:', err);
+                  }
+                }
                 return;
               }
               
-              // Handle call state messages
-              if (data.type === 'call_state') {
-                console.log('Call state update:', data.content)
-              }
-              
-              onMessage(data)
-            } catch (jsonError) {
-              console.error('Error parsing WebSocket message as JSON:', {
-                error: jsonError instanceof Error ? jsonError.message : 'Unknown JSON parsing error',
-                data: event.data.substring(0, 100),
+              // Process single message
+              processMessage(event.data);
+            } else {
+              console.warn('Non-string WebSocket message received:', {
+                type: typeof event.data,
                 timestamp: new Date().toISOString()
               })
             }
-          } else {
-            console.warn('Non-string WebSocket message received:', {
-              type: typeof event.data,
+          } catch (error) {
+            console.error('Error handling WebSocket message:', {
+              error: error instanceof Error ? error.message : 'Unknown error',
+              dataType: typeof event.data,
+              dataPreview: typeof event.data === 'string' ? event.data.substring(0, 100) : 'Not a string',
               timestamp: new Date().toISOString()
             })
           }
-        } catch (error) {
-          console.error('Error handling WebSocket message:', {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            dataType: typeof event.data,
-            timestamp: new Date().toISOString()
-          })
         }
-      }
+        
+        // Helper function to process a single message
+        function processMessage(messageStr: string) {
+          try {
+            // Log the raw message for debugging
+            if (messageStr.trim() === '') {
+              console.warn('Empty message received from server');
+              return;
+            }
+            
+            // Check for ping/pong messages first to avoid parsing
+            if (messageStr.includes('"type":"ping"') || messageStr.includes('"type":"pong"')) {
+              // Don't log these messages to reduce noise
+              const data = JSON.parse(messageStr) as WebSocketMessage;
+              // Still call onMessage with ping/pong messages
+              if (data.type === 'ping' || data.type === 'pong') {
+                return; // Don't pass ping/pong messages to the handler
+              }
+              return;
+            }
+            
+            // Log the message for debugging (only non-ping/pong messages)
+            console.debug('Processing WebSocket message:', messageStr.substring(0, 500));
+            
+            const data = JSON.parse(messageStr) as WebSocketMessage
+            
+            // Handle call state messages
+            if (data.type === 'call_state') {
+              console.log('Call state update:', data.content)
+            }
+            
+            onMessage(data)
+          } catch (jsonError) {
+            // Enhanced error handling for JSON parsing errors
+            const messagePreview = messageStr?.substring(0, 200) || 'Empty message';
+            console.error('Error parsing WebSocket message as JSON:', {
+              error: jsonError instanceof Error ? jsonError.message : 'Unknown JSON parsing error',
+              messagePreview: messagePreview,
+              messageLength: messageStr?.length || 0,
+              timestamp: new Date().toISOString()
+            });
+            
+            // Try to handle potential special message formats
+            if (messageStr.startsWith('#') || messageStr.includes('ping') || messageStr.includes('pong')) {
+              console.log('Received possible control message, ignoring JSON parsing error');
+              return;
+            }
+          }
+        }
+      }, 100); // Add a 100ms delay before connecting
     } catch (error) {
       console.error('Error creating WebSocket connection:', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -257,6 +316,12 @@ export function createWebSocketClient(
 
     try {
       const message: WebSocketMessage = { type, content }
+      
+      // Only log non-ping messages to reduce console noise
+      if (type !== 'ping' && type !== 'pong') {
+        console.debug(`Sending message: ${type}`)
+      }
+      
       ws.send(JSON.stringify(message))
       return true
     } catch (error) {

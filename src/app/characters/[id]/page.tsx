@@ -4,8 +4,9 @@ import { notFound } from 'next/navigation'
 import { characterApi, Character } from '../../../lib/api'
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import CharacterChat from '../../../components/character/CharacterChat'
+import CharacterDetail from '../../../components/character/CharacterDetail'
 import ProtectedRoute from '../../../components/auth/ProtectedRoute'
+import { FaSpinner } from 'react-icons/fa'
 
 export default function CharacterPage() {
   const params = useParams()
@@ -31,8 +32,11 @@ export default function CharacterPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-8 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+      <div className="min-h-screen bg-[#070809] flex items-center justify-center">
+        <div className="flex flex-col items-center">
+          <FaSpinner className="animate-spin h-10 w-10 text-indigo-500 mb-4" />
+          <p className="text-gray-400">Loading character...</p>
+        </div>
       </div>
     )
   }
@@ -43,38 +47,8 @@ export default function CharacterPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 py-8">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-3xl">
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 mb-8">
-              {character.name}
-            </h1>
-
-            <div className="bg-white shadow-xl rounded-lg overflow-hidden p-6 mb-8">
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-lg font-medium text-gray-900">Description</h2>
-                  <p className="mt-1 text-gray-600">{character.description}</p>
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-medium text-gray-900">Personality</h2>
-                  <p className="mt-1 text-gray-600">{character.personality}</p>
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-medium text-gray-900">Voice Type</h2>
-                  <p className="mt-1 text-gray-600">{character.voice_type}</p>
-                </div>
-              </div>
-            </div>
-
-            <h2 className="text-2xl font-bold tracking-tight text-gray-900 mb-4">
-              Chat with {character.name}
-            </h2>
-            <CharacterChat character={character} />
-          </div>
-        </div>
+      <div className="h-screen w-full overflow-hidden bg-[#070809]">
+        <CharacterDetail character={character} />
       </div>
     </ProtectedRoute>
   )

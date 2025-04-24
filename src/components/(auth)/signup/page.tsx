@@ -52,7 +52,7 @@ export default function SignupPage() {
     
     try {
       await signup(data.name, data.email, data.password);
-      router.push("/");
+      // Redirect is handled in the auth context
     } catch (error) {
       console.error("Signup failed:", error);
       setError(error instanceof Error ? error.message : "Failed to create account. Please try again.");

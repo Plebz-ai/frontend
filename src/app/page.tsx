@@ -1,8 +1,10 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
+import { useAuth } from '@/lib/auth'
+import { useRouter } from 'next/navigation'
 
 const features = [
   {
@@ -35,6 +37,26 @@ const features = [
 ]
 
 export default function Home() {
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
+  
+  // Redirect to explore page if user is logged in
+  useEffect(() => {
+    if (!isLoading && user) {
+      router.push('/explore')
+    }
+  }, [isLoading, user, router])
+  
+  // Don't render anything while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+      </div>
+    )
+  }
+  
+  // Only render landing page content if user is not logged in
   return (
     <div className="relative min-h-screen">
       {/* Hero section */}
