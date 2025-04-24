@@ -117,6 +117,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
               setMessages(data.content.messages);
               setShowQuickReplies(false);
             }
+          } else if (data.type === 'ack') {
+            // Message acknowledgment
+            console.log('Message acknowledged by server:', data.content);
           }
         },
         () => {
@@ -127,7 +130,12 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
         () => {
           console.log('WebSocket disconnected');
           setIsConnected(false)
-          setConnectionError('Connection lost. Please refresh the page.')
+          setConnectionError('Connection lost. Attempting to reconnect...')
+          
+          // Try to automatically reconnect
+          setTimeout(() => {
+            attemptReconnect(character.id.toString(), clientId);
+          }, 3000);
         }
       )
 
@@ -158,6 +166,54 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       }
     }
   }, [character.id])
+
+  // Helper function for reconnection
+  const attemptReconnect = (characterId: string, clientId: string) => {
+    if (!wsClientRef.current) {
+      console.log('Creating new WebSocket client for reconnection...');
+      
+      wsClientRef.current = createWebSocketClient(
+        (data) => {
+          if (data.type === 'chat') {
+            setMessages((prev) => [...prev, data.content])
+            setIsTyping(false)
+            setShowQuickReplies(false)
+          } else if (data.type === 'typing') {
+            setIsTyping(true)
+          } else if (data.type === 'audio') {
+            handleAudioMessage(data.content)
+          } else if (data.type === 'error') {
+            setConnectionError(data.content.message)
+            console.error('WebSocket returned error:', data.content);
+          } else if (data.type === 'speech_text') {
+            setInputMessage(data.content.text)
+          } else if (data.type === 'chat_history') {
+            if (data.content && Array.isArray(data.content.messages)) {
+              console.log('Received chat history on reconnect:', data.content.messages.length, 'messages');
+              setMessages(data.content.messages);
+            }
+          }
+        },
+        () => {
+          console.log('WebSocket reconnected successfully');
+          setIsConnected(true)
+          setConnectionError(null)
+        },
+        () => {
+          console.log('WebSocket disconnected after reconnection attempt');
+          setIsConnected(false)
+          setConnectionError('Connection lost. Click "Reconnect" to try again.')
+        }
+      );
+    }
+    
+    console.log('Attempting to reconnect WebSocket...');
+    wsClientRef.current.connect(
+      characterId, 
+      clientId, 
+      sessionIdRef.current
+    );
+  }
 
   useEffect(() => {
     // Auto-scroll to bottom when messages change
@@ -364,34 +420,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
                   wsClientRef.current.disconnect();
                 }
                 const clientId = Math.random().toString(36).substring(7);
-                wsClientRef.current = createWebSocketClient(
-                  (data) => {
-                    if (data.type === 'chat') {
-                      setMessages((prev) => [...prev, data.content])
-                      setIsTyping(false)
-                    } else if (data.type === 'typing') {
-                      setIsTyping(true)
-                    } else if (data.type === 'audio') {
-                      handleAudioMessage(data.content)
-                    } else if (data.type === 'error') {
-                      setConnectionError(data.content.message)
-                      console.error('WebSocket returned error:', data.content);
-                    } else if (data.type === 'speech_text') {
-                      setInputMessage(data.content.text)
-                    }
-                  },
-                  () => {
-                    console.log('WebSocket connected successfully');
-                    setIsConnected(true)
-                    setConnectionError(null)
-                  },
-                  () => {
-                    console.log('WebSocket disconnected');
-                    setIsConnected(false)
-                    setConnectionError('Connection lost. Please refresh the page.')
-                  }
-                );
-                wsClientRef.current.connect(character.id.toString(), clientId);
+                attemptReconnect(character.id.toString(), clientId);
               }}
             >
               Reconnect
