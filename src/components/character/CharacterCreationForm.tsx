@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, memo } from 'react'
+import React, { useState, useRef, memo, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { characterApi } from '../../lib/api'
 import { useRouter } from 'next/navigation'
@@ -8,7 +8,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { UserCircle } from 'lucide-react'
 import { useSidebar } from '@/lib/sidebar-context'
-
+import InteractiveCharacter from './InteractiveCharacter'
 
 interface FormData {
   name: string
@@ -248,9 +248,36 @@ export default function CharacterCreationForm() {
   };
 
   return (
-    <div className="bg-[#0a0b0e] flex flex-col">
+    <div className="bg-[#0a0b0e] flex flex-col min-h-screen relative overflow-hidden">
+      {/* Decorative Elements */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {/* Floating particles */}
+        <div className="absolute top-20 left-10 w-24 h-24 rounded-full bg-indigo-600/10 blur-2xl animate-pulse"></div>
+        <div className="absolute top-1/3 right-[10%] w-40 h-32 rounded-full bg-blue-500/10 blur-3xl animate-pulse" style={{ animationDuration: '8s' }}></div>
+        <div className="absolute bottom-20 left-[5%] w-56 h-56 rounded-full bg-purple-600/10 blur-2xl animate-pulse" style={{ animationDuration: '12s' }}></div>
+        <div className="absolute top-2/3 right-20 w-20 h-20 rounded-full bg-indigo-400/15 blur-xl animate-pulse" style={{ animationDuration: '7s' }}></div>
+        
+        {/* Tech-inspired decorative lines */}
+        <div className="absolute top-40 left-20 w-[350px] h-[1px] bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent transform -rotate-45"></div>
+        <div className="absolute bottom-60 right-40 w-[250px] h-[1px] bg-gradient-to-r from-transparent via-blue-500/20 to-transparent transform rotate-45"></div>
+        
+        {/* Glowing dots */}
+        <div className="absolute top-1/4 left-[15%] w-2 h-2 rounded-full bg-indigo-500/30 shadow-lg shadow-indigo-500/20 animate-ping" style={{ animationDuration: '3s' }}></div>
+        <div className="absolute top-2/3 right-[15%] w-2 h-2 rounded-full bg-blue-400/40 shadow-lg shadow-blue-500/20 animate-ping" style={{ animationDuration: '5s' }}></div>
+        <div className="absolute bottom-1/4 left-1/3 w-2 h-2 rounded-full bg-purple-500/30 shadow-lg shadow-purple-500/20 animate-ping" style={{ animationDuration: '4s' }}></div>
+      </div>
+      
+      {/* Interactive 3D Character Model */}
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
+        <div className="absolute bottom-0 left-0 w-[900px] h-[1100px] pointer-events-auto z-10">
+          <div className="w-full h-full overflow-hidden">
+            <InteractiveCharacter />
+          </div>
+        </div>
+      </div>
+      
       {/* Header */}
-      <header className="bg-[#07080a] border-b border-gray-800 py-3 px-6">
+      <header className="bg-[#07080a] border-b border-gray-800 py-3 px-6 relative z-10">
         <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button 
@@ -263,35 +290,12 @@ export default function CharacterCreationForm() {
             </button>
             <h1 className="text-2xl font-bold text-white">Create Your AI Character</h1>
           </div>
-          
-          <div>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className={`px-6 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-medium rounded-lg shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 flex items-center ${
-                isGenerating ? 'opacity-75 cursor-not-allowed' : ''
-              }`}
-              disabled={isGenerating}
-            >
-              {isGenerating ? (
-                <>
-                  <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Creating...
-                </>
-              ) : (
-                'Create Character'
-              )}
-            </button>
-          </div>
         </div>
       </header>
 
       {/* Main content */}
-      <div className="flex-1">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      <div className="flex-1 flex items-center justify-center">
+        <div className="max-w-5xl w-full mx-auto px-6 py-4">
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -20 }}
@@ -586,6 +590,29 @@ export default function CharacterCreationForm() {
                   </div>
                 </div>
               </div>
+            </div>
+            
+            {/* Submit button at the bottom of the form, aligned to the right */}
+            <div className="mt-8 flex justify-end">
+              <button
+                type="submit"
+                className={`px-8 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-medium rounded-lg shadow-lg hover:shadow-indigo-500/20 transition-all duration-200 flex items-center ${
+                  isGenerating ? 'opacity-75 cursor-not-allowed' : ''
+                }`}
+                disabled={isGenerating}
+              >
+                {isGenerating ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Creating...
+                  </>
+                ) : (
+                  'Create Character'
+                )}
+              </button>
             </div>
           </form>
         </div>

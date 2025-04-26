@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion'
 import ProtectedRoute from '@/components/auth/ProtectedRoute'
-import { FaSearch } from 'react-icons/fa'
+import { Search, Plus, Sparkles, Star, Clock, Filter, User, Grid, Menu, X, ChevronRight, ChevronDown } from 'lucide-react'
 import { characterApi, Character } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
@@ -120,6 +120,15 @@ const additionalChats = [
   }
 ]
 
+// Categories for filter
+const categories = [
+  { id: 'all', name: 'All Categories' },
+  { id: 'popular', name: 'Popular' },
+  { id: 'recommended', name: 'Recommended' },
+  { id: 'recent', name: 'Recent' },
+  { id: 'favorites', name: 'Favorites' },
+]
+
 // Define types for component props
 interface CardProps {
   title: string;
@@ -128,60 +137,181 @@ interface CardProps {
   color: string;
   defaultImage?: string;
   video?: string;
+  featured?: boolean;
+  onClick?: () => void;
 }
 
-// Character card component
-function CharacterCard({ title, description, image, color, defaultImage }: CardProps) {
+// Animated blur background component
+const AnimatedBackground = () => (
+  <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-900/10 via-gray-900/40 to-black/80"></div>
+    <motion.div 
+      className="absolute top-20 -right-20 w-96 h-96 rounded-full bg-indigo-600/20 blur-3xl"
+      animate={{ 
+        x: [0, 20, 0],
+        y: [0, -20, 0],
+        scale: [1, 1.1, 1],
+      }}
+      transition={{ 
+        duration: 15,
+        repeat: Infinity,
+        repeatType: "reverse"
+      }}
+    />
+    <motion.div 
+      className="absolute bottom-40 -left-20 w-64 h-64 rounded-full bg-purple-600/20 blur-3xl"
+      animate={{ 
+        x: [0, -10, 0],
+        y: [0, 30, 0],
+        scale: [1, 1.2, 1],
+      }}
+      transition={{ 
+        duration: 18,
+        repeat: Infinity,
+        repeatType: "reverse"
+      }}
+    />
+  </div>
+)
+
+// Loading spinner component
+const LoadingSpinner = () => (
+  <div className="min-h-screen bg-[#070809] flex items-center justify-center">
+    <div className="relative w-20 h-20">
+      <div className="absolute top-0 left-0 w-full h-full border-4 border-indigo-200/20 rounded-full opacity-30 animate-ping"></div>
+      <div className="absolute top-0 left-0 w-full h-full border-4 border-t-indigo-600 border-l-indigo-600 border-b-purple-600 border-r-purple-600 rounded-full animate-spin"></div>
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+        <Sparkles className="w-6 h-6 text-indigo-400" />
+      </div>
+    </div>
+  </div>
+)
+
+// Character card component with glass morphism and enhanced animations
+function CharacterCard({ title, description, image, color, defaultImage, featured = false, onClick }: CardProps) {
   const [imageError, setImageError] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
 
   return (
     <motion.div
-      className="bg-[#151722] rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-all group border border-[#292d3e] hover:border-indigo-500/50"
-      whileHover={{ y: -5 }}
+      className={`group relative flex flex-col rounded-2xl overflow-hidden backdrop-blur-sm ${
+        featured 
+          ? 'ring-2 ring-indigo-500 bg-black/40' 
+          : 'ring-1 ring-white/10 bg-black/30'
+      } shadow-lg hover:shadow-xl transition-all duration-500`}
+      whileHover={{ y: -5, scale: 1.02 }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
+      onClick={onClick}
     >
-      {/* Character Image/Avatar */}
+      {featured && (
+        <div className="absolute top-3 right-3 z-20">
+          <motion.div 
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white" 
+          >
+            <Star className="w-4 h-4" />
+          </motion.div>
+        </div>
+      )}
+      
+      {/* Character Image/Avatar with parallax effect */}
       <div className="w-full aspect-[3/2] relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-[#151722] via-transparent to-transparent z-10"></div>
+        <motion.div 
+          className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"
+          style={{ 
+            opacity: isHovered ? 0.8 : 0.6,
+            background: isHovered ? 
+              'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.1))' : 
+              'linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.2) 70%, rgba(0,0,0,0))'
+          }}
+        />
+        
         {!imageError ? (
-          <div className="w-full h-full relative">
+          <motion.div 
+            className="w-full h-full relative"
+            style={{ 
+              scale: isHovered ? 1.1 : 1,
+              transition: 'scale 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)'
+            }}
+          >
+            <div className={`absolute inset-0 bg-gradient-to-br ${color} opacity-30 mix-blend-overlay`}></div>
             <img 
               src={image}
               alt={title}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+              className="w-full h-full object-cover"
               onError={() => setImageError(true)}
             />
-          </div>
+          </motion.div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-800/30 to-purple-800/30">
+          <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${color}`}>
             <span className="text-6xl font-bold text-white/30">{defaultImage || title.charAt(0).toUpperCase()}</span>
           </div>
         )}
+        
+        {/* Animated overlay on hover */}
+        <motion.div 
+          className="absolute inset-x-0 bottom-0 h-full flex flex-col justify-end p-4 z-20"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: isHovered ? 1 : 0, y: isHovered ? 0 : 10 }}
+          transition={{ duration: 0.3 }}
+        >
+          <motion.div 
+            className="flex items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: isHovered ? 1 : 0 }}
+          >
+            <div className="w-10 h-10 rounded-full bg-indigo-600 mr-3 flex items-center justify-center">
+              <User className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-xs text-indigo-300">AI Character</p>
+              <motion.button 
+                className="text-white text-sm flex items-center"
+                whileHover={{ x: 5 }}
+              >
+                <span>View details</span>
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </motion.button>
+            </div>
+          </motion.div>
+        </motion.div>
       </div>
 
       {/* Character Info */}
-      <div className="p-4">
-        <h3 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors truncate">{title}</h3>
-        <p className="text-gray-400 text-sm mt-1 line-clamp-2 min-h-[2.5rem]">{description}</p>
+      <div className="p-5 flex-1 flex flex-col">
+        <div className="flex-1">
+          <h3 className="text-lg font-bold text-white group-hover:text-indigo-300 transition-colors truncate">{title}</h3>
+          <p className="text-gray-400 text-sm mt-1 line-clamp-2">{description}</p>
+        </div>
         
         {/* Tags or metadata */}
-        <div className="flex items-center justify-between mt-3">
-          <div className="text-xs text-gray-500">
-            Featured
-          </div>
-          
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
           <div className="flex flex-wrap gap-1">
             <span className="px-2 py-0.5 text-xs rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-800/30">
               Character
             </span>
           </div>
+          
+          <motion.div 
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 hover:bg-indigo-600/20 transition-colors"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Plus className="w-4 h-4 text-indigo-300" />
+          </motion.div>
         </div>
       </div>
       
-      {/* Interactive indicator */}
-      <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+      {/* Interactive glow indicator */}
+      <div className="absolute bottom-0 left-0 w-full h-[2px] bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+      
+      {/* Corner glow effect */}
+      <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full bg-indigo-600/10 group-hover:bg-indigo-600/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
     </motion.div>
   )
 }
@@ -189,35 +319,58 @@ function CharacterCard({ title, description, image, color, defaultImage }: CardP
 // Situational chat card component
 function SituationalChatCard({ title, description, image, color, defaultImage }: CardProps) {
   const [imageError, setImageError] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
   
   return (
     <motion.div
-      className="bg-[#151722] rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-all group border border-[#292d3e] hover:border-indigo-500/50 relative"
-      whileHover={{ y: -5 }}
+      className="group relative flex flex-col rounded-2xl overflow-hidden backdrop-blur-sm bg-black/30 ring-1 ring-white/10 shadow-lg hover:shadow-xl hover:ring-indigo-500/50 transition-all duration-500"
+      whileHover={{ y: -5, scale: 1.02 }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
     >
-      {/* Coming Soon Banner */}
-      <div className="absolute top-0 right-0 w-full z-20 overflow-hidden">
-        <div className="absolute transform rotate-45 bg-indigo-600 text-white font-bold py-1 right-[-35px] top-[20px] w-[170px] text-center shadow-lg z-30">
+      {/* Coming Soon Badge */}
+      <div className="absolute top-0 right-0 w-full z-20">
+        <motion.div 
+          initial={{ x: 100 }}
+          animate={{ x: 0 }}
+          transition={{ delay: 0.2, type: "spring", stiffness: 100 }}
+          className="absolute transform rotate-45 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-1 right-[-35px] top-[20px] w-[170px] text-center shadow-lg z-30"
+        >
           COMING SOON
-        </div>
+        </motion.div>
       </div>
       
-      {/* Character Image/Avatar */}
+      {/* Character Image/Avatar with parallax effect */}
       <div className="w-full aspect-[3/2] relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-[#151722] via-transparent to-transparent z-10"></div>
+        <motion.div 
+          className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"
+          style={{ 
+            opacity: isHovered ? 0.8 : 0.6,
+            background: isHovered ? 
+              'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.5) 50%, rgba(0,0,0,0.1))' : 
+              'linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.2) 70%, rgba(0,0,0,0))'
+          }}
+        />
+        
         {!imageError ? (
-          <div className="w-full h-full relative">
+          <motion.div 
+            className="w-full h-full relative"
+            style={{ 
+              scale: isHovered ? 1.1 : 1,
+              transition: 'scale 0.7s cubic-bezier(0.25, 0.1, 0.25, 1)'
+            }}
+          >
             <div className={`absolute inset-0 bg-gradient-to-r ${color} opacity-80`}></div>
             <img 
               src={image}
               alt={title}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 opacity-75"
+              className="w-full h-full object-cover opacity-75"
               onError={() => setImageError(true)}
             />
-          </div>
+          </motion.div>
         ) : (
           <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${color}`}>
             <span className="text-6xl font-bold text-white/30">{defaultImage || title.charAt(0).toUpperCase()}</span>
@@ -225,24 +378,27 @@ function SituationalChatCard({ title, description, image, color, defaultImage }:
         )}
         
         {/* Title overlay on image */}
-        <div className="absolute bottom-0 w-full p-4 z-10 text-center">
+        <div className="absolute bottom-0 w-full p-4 z-10">
           <h3 className="text-xl font-bold text-white group-hover:text-indigo-100 transition-colors drop-shadow-md">{title}</h3>
         </div>
       </div>
 
       {/* Character Info */}
-      <div className="p-4">
-        <p className="text-gray-400 text-sm line-clamp-2 min-h-[2.5rem]">{description}</p>
+      <div className="p-5 flex-1 flex flex-col">
+        <p className="text-gray-400 text-sm line-clamp-2 mb-4 flex-1">{description}</p>
         
-        <div className="mt-4">
-          <button disabled className="w-full py-2 bg-gray-600 text-white rounded-md transition-colors cursor-not-allowed opacity-80">
-            Start Chat
+        <button disabled className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl transition-colors shadow-sm">
+          <span className="relative flex items-center justify-center">
+            <span className="mr-2">Start Chat</span>
+            <span className="absolute right-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300">
+              <ChevronRight className="w-4 h-4" />
+            </span>
+          </span>
           </button>
-        </div>
       </div>
       
-      {/* Interactive indicator */}
-      <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+      {/* Interactive glow indicator */}
+      <div className="absolute bottom-0 left-0 w-full h-[2px] bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
     </motion.div>
   )
 }
@@ -250,18 +406,29 @@ function SituationalChatCard({ title, description, image, color, defaultImage }:
 // Featured image/video card component
 function FeaturedImageCard({ title, description, image, video, color }: CardProps) {
   const hasVideo = !!video;
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <motion.div
-      className="bg-[#151722] rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-all group border border-[#292d3e] hover:border-indigo-500/50 relative"
-      whileHover={{ y: -5, scale: 1.01 }}
+      className="group relative flex flex-col rounded-2xl overflow-hidden backdrop-blur-sm bg-black/30 ring-1 ring-white/10 shadow-lg hover:shadow-xl hover:ring-indigo-500/30 transition-all duration-500"
+      whileHover={{ y: -7, scale: 1.01 }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
     >
       {/* Media Background */}
       <div className="w-full aspect-[16/9] relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-[#151722] via-black/30 to-transparent z-10"></div>
+        <motion.div 
+          className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent z-10"
+          animate={{ 
+            background: isHovered ? 
+              'linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0.5) 70%, rgba(0,0,0,0.1))' : 
+              'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.1))'
+          }}
+          transition={{ duration: 0.3 }}
+        />
         
         {hasVideo ? (
           <video 
@@ -281,22 +448,45 @@ function FeaturedImageCard({ title, description, image, video, color }: CardProp
         )}
         
         {/* Title overlay on image */}
-        <div className="absolute bottom-0 w-full p-5 z-10">
-          <h3 className="text-2xl font-bold text-white group-hover:text-indigo-200 transition-colors drop-shadow-md">{title}</h3>
+        <div className="absolute bottom-0 w-full p-6 z-10">
+          <div className="flex items-center mb-2">
+            <motion.div 
+              className="w-8 h-8 rounded-full bg-indigo-600/80 flex items-center justify-center mr-3"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Sparkles className="w-4 h-4 text-white" />
+            </motion.div>
+            <span className="text-xs text-indigo-300 font-medium uppercase tracking-wider">Featured</span>
+          </div>
+          <h3 className="text-2xl font-bold text-white group-hover:text-indigo-200 transition-colors drop-shadow-md max-w-[80%]">{title}</h3>
         </div>
       </div>
       
       {/* Description and Button */}
-      <div className="p-4">
-        <p className="text-gray-400 text-sm line-clamp-2 min-h-[2.5rem] mb-4">{description}</p>
+      <div className="p-6">
+        <p className="text-gray-400 text-sm line-clamp-2 min-h-[2.5rem] mb-5">{description}</p>
         
-        <button className={`py-2 px-4 w-full bg-gradient-to-r ${color} text-white rounded-md hover:brightness-110 transition-all`}>
-          Explore More
-        </button>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className={`w-full py-2.5 bg-gradient-to-r ${color} text-white rounded-xl shadow-md hover:shadow-indigo-500/20 transition-all duration-300`}
+        >
+          <span className="relative flex items-center justify-center">
+            <span>Explore More</span>
+            <motion.span 
+              className="absolute right-4"
+              animate={{ x: isHovered ? 5 : 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </motion.span>
+          </span>
+        </motion.button>
       </div>
       
-      {/* Interactive indicator */}
-      <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
+      {/* Corner glow effect */}
+      <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full bg-indigo-600/10 group-hover:bg-indigo-600/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
     </motion.div>
   )
 }
@@ -306,7 +496,18 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(true)
   const [characters, setCharacters] = useState<Character[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const router = useRouter()
+  const headerRef = useRef<HTMLDivElement>(null)
+  
+  // Scroll animations
+  const { scrollY } = useScroll()
+  const headerOpacity = useTransform(scrollY, [0, 100], [0, 1])
+  const headerBackgroundColor = useTransform(scrollY, [0, 100], ['rgba(7, 8, 9, 0)', 'rgba(7, 8, 9, 0.8)'])
+  const headerBlur = useTransform(scrollY, [0, 100], ['blur(0px)', 'blur(12px)'])
+  const headerBorder = useTransform(scrollY, [0, 100], ['1px solid rgba(255, 255, 255, 0)', '1px solid rgba(255, 255, 255, 0.05)'])
   
   useEffect(() => {
     // Check if user is logged in
@@ -319,10 +520,13 @@ export default function ExplorePage() {
     // Fetch the characters
     const fetchCharacters = async () => {
       try {
+        setSearchLoading(true)
         const data = await characterApi.list()
         setCharacters(data)
+        setSearchLoading(false)
       } catch (error) {
         console.error('Error fetching characters:', error)
+        setSearchLoading(false)
       }
     }
     
@@ -345,104 +549,265 @@ export default function ExplorePage() {
     : []
   
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#070809] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
-      </div>
-    )
+    return <LoadingSpinner />
   }
   
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-[#070809] text-white pb-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-          {/* Search bar */}
-          <div className="max-w-3xl mx-auto mb-12">
-            <div className="relative">
+      <div className="min-h-screen bg-[#070809] text-white overflow-x-hidden">
+        <AnimatedBackground />
+        
+        {/* Floating Header with blur effect on scroll */}
+        <motion.div 
+          ref={headerRef}
+          className="sticky top-0 z-50"
+          style={{ 
+            backgroundColor: headerBackgroundColor,
+            backdropFilter: headerBlur,
+            borderBottom: headerBorder,
+          }}
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+            <button 
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors lg:hidden"
+            >
+              {menuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            
+            <div className="relative flex-1 max-w-xl mx-4">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <FaSearch className="h-5 w-5 text-gray-400" />
+                <Search className="h-4 w-4 text-gray-400" />
               </div>
               <input
                 type="text"
                 placeholder="Search for characters..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-800 text-gray-200 pl-12 pr-4 py-3 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500 transition-all text-lg"
+                className="w-full bg-white/5 text-gray-200 pl-12 pr-4 py-2.5 rounded-xl border border-white/10 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 placeholder-gray-500 transition-all"
               />
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${viewMode === 'grid' ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}
+              >
+                <Grid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-colors ${viewMode === 'list' ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+              
+              <div className="h-6 w-px bg-white/10 mx-1"></div>
+              
+              <Link href="/pricing" className="hidden md:flex items-center text-sm mr-2 text-white/80 hover:text-white transition-colors">
+                Pricing
+              </Link>
+              
+              <Link href="/create" className="hidden sm:flex">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="flex items-center bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full px-4 py-2 shadow-md hover:shadow-indigo-500/30 transition-shadow"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  <span className="text-sm font-medium">Create Character</span>
+                </motion.button>
+              </Link>
+            </div>
+          </div>
+        </motion.div>
+        
+        <div className="flex relative z-10">
+          {/* Sidebar Navigation */}
+          <AnimatePresence>
+            {menuOpen && (
+              <motion.div
+                initial={{ x: -300, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -300, opacity: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="lg:hidden fixed inset-y-0 left-0 z-40 w-72 bg-black/80 backdrop-blur-xl shadow-lg border-r border-white/5 overflow-y-auto"
+              >
+                <div className="p-5">
+                  <div className="flex items-center justify-between mb-8">
+                    <h2 className="text-xl font-bold text-white">Explore</h2>
+                    <button 
+                      onClick={() => setMenuOpen(false)}
+                      className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                </div>
+                  
+                  <nav className="space-y-1">
+                    {categories.map(category => (
+                      <button
+                        key={category.id}
+                        onClick={() => {
+                          setActiveCategory(category.id)
+                          setMenuOpen(false)
+                        }}
+                        className={`w-full flex items-center px-3 py-2.5 rounded-lg transition-colors ${
+                          activeCategory === category.id 
+                            ? 'bg-indigo-600/20 text-indigo-300' 
+                            : 'text-gray-300 hover:bg-white/5'
+                        }`}
+                      >
+                        {category.id === 'all' && <Menu className="w-4 h-4 mr-3" />}
+                        {category.id === 'popular' && <Star className="w-4 h-4 mr-3" />}
+                        {category.id === 'recommended' && <Sparkles className="w-4 h-4 mr-3" />}
+                        {category.id === 'recent' && <Clock className="w-4 h-4 mr-3" />}
+                        {category.id === 'favorites' && <Star className="w-4 h-4 mr-3" />}
+                        {category.name}
+                      </button>
+                    ))}
+                  </nav>
+                  
+                  <div className="mt-8 pt-6 border-t border-white/5">
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Characters</h3>
+                    <div className="space-y-1">
+                      {featuredCategories.slice(0, 3).map((category, idx) => (
+                        <div key={idx} className="flex items-center px-3 py-2 rounded-lg text-gray-300 hover:bg-white/5 transition-colors">
+                          <div className="w-8 h-8 rounded-full bg-gray-800 mr-3 flex-shrink-0 overflow-hidden">
+                            {category.image ? (
+                              <img src={category.image} alt={category.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-indigo-900/30">
+                                <span>{category.defaultImage}</span>
+                            </div>
+                            )}
+                          </div>
+                          <span className="truncate">{category.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                            </div>
+                            
+                  <div className="mt-8 pt-6 border-t border-white/5">
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Pages</h3>
+                    <div className="space-y-1">
+                      <Link href="/pricing" className="flex items-center px-3 py-2 rounded-lg text-gray-300 hover:bg-white/5 transition-colors">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 mr-3 flex-shrink-0 flex items-center justify-center text-white">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <span>Pricing Plans</span>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          {/* Desktop Sidebar */}
+          <div className="hidden lg:block w-56 fixed inset-y-0 pt-20 pl-6 pr-3 overflow-y-auto">
+            <nav className="space-y-1 mb-8">
+              {categories.map(category => (
+                <button
+                  key={category.id}
+                  onClick={() => setActiveCategory(category.id)}
+                  className={`w-full flex items-center px-3 py-2.5 rounded-lg transition-colors ${
+                    activeCategory === category.id 
+                      ? 'bg-indigo-600/20 text-indigo-300 ring-1 ring-indigo-500/20' 
+                      : 'text-gray-300 hover:bg-white/5'
+                  }`}
+                >
+                  {category.id === 'all' && <Menu className="w-4 h-4 mr-3" />}
+                  {category.id === 'popular' && <Star className="w-4 h-4 mr-3" />}
+                  {category.id === 'recommended' && <Sparkles className="w-4 h-4 mr-3" />}
+                  {category.id === 'recent' && <Clock className="w-4 h-4 mr-3" />}
+                  {category.id === 'favorites' && <Star className="w-4 h-4 mr-3" />}
+                  {category.name}
+                </button>
+              ))}
+            </nav>
+            
+            <div className="pt-6 border-t border-white/5">
+              <h3 className="text-sm font-medium text-gray-400 mb-3 px-3">Recent Characters</h3>
+              <div className="space-y-1">
+                {featuredCategories.slice(0, 3).map((category, idx) => (
+                  <div key={idx} className="flex items-center px-3 py-2 rounded-lg text-gray-300 hover:bg-white/5 transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-gray-800 mr-3 flex-shrink-0 overflow-hidden">
+                      {category.image ? (
+                        <img src={category.image} alt={category.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-indigo-900/30">
+                          <span>{category.defaultImage}</span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="truncate">{category.title}</span>
+                  </div>
+                              ))}
+                            </div>
+            </div>
+            
+            <div className="pt-6 border-t border-white/5">
+              <h3 className="text-sm font-medium text-gray-400 mb-3 px-3">Pages</h3>
+              <div className="space-y-1">
+                <Link href="/pricing" className="flex items-center px-3 py-2 rounded-lg text-gray-300 hover:bg-white/5 transition-colors">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 mr-3 flex-shrink-0 flex items-center justify-center text-white">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span>Pricing Plans</span>
+                </Link>
+              </div>
             </div>
           </div>
           
-          {/* Search Results */}
-          {searchQuery && (
-            <section className="mb-16">
-              <h2 className="text-2xl font-bold mb-6">Search Results</h2>
-              {searchLoading ? (
-                <div className="flex justify-center py-8">
-                  <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              ) : filteredCharacters.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                  {filteredCharacters.map((character) => (
-                    <Link key={character.id} href={`/characters/${character.id}`}>
-                      <motion.div
-                        className="bg-[#151722] rounded-lg overflow-hidden shadow-lg hover:shadow-xl transition-all group border border-[#292d3e] hover:border-indigo-500/50"
-                        whileHover={{ y: -5 }}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        {/* Character Image/Avatar */}
-                        <div className="w-full aspect-[3/2] relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-t from-[#151722] via-transparent to-transparent z-10"></div>
-                          <div className="w-full h-full relative">
-                            <img 
-                              src={character.avatar_url || "/placeholder-avatar.png"} 
-                              alt={character.name}
-                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                              onError={(e) => {
-                                // When image fails to load, show the fallback div with first letter
-                                e.currentTarget.style.display = 'none';
-                                e.currentTarget.parentElement?.classList.add('fallback-active');
-                              }}
-                            />
-                            <div className="hidden fallback w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-800/30 to-purple-800/30">
-                              <span className="text-6xl font-bold text-white/30">{character.name.charAt(0).toUpperCase()}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Character Info */}
-                        <div className="p-4">
-                          <h3 className="text-lg font-semibold text-white group-hover:text-indigo-300 transition-colors truncate">{character.name}</h3>
-                          <p className="text-gray-400 text-sm mt-1 line-clamp-2 min-h-[2.5rem]">{character.description || "No description available"}</p>
-                          
-                          {/* Personality tags */}
-                          <div className="flex items-center justify-between mt-3">
-                            <div className="text-xs text-gray-500">
-                              AI Character
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-1">
-                              {character.personality && character.personality.split(',').slice(0, 1).map((trait, index) => (
-                                <span 
-                                  key={index} 
-                                  className="px-2 py-0.5 text-xs rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-800/30"
-                                >
-                                  {trait.trim()}
-                                </span>
-                              ))}
-                            </div>
+          {/* Main Content */}
+          <main className="flex-1 pt-8 pb-20 lg:pl-56">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              {/* Search Results */}
+              {searchQuery && (
+                <section className="mb-16">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-bold">Search Results</h2>
+                    <div className="text-sm text-gray-400">
+                      Found {filteredCharacters.length} result{filteredCharacters.length !== 1 ? 's' : ''}
                           </div>
                         </div>
                         
-                        {/* Interactive indicator */}
-                        <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
-                      </motion.div>
+                  {searchLoading ? (
+                    <div className="flex justify-center py-16">
+                      <div className="relative w-12 h-12">
+                        <div className="absolute top-0 left-0 w-full h-full border-4 border-indigo-200/10 rounded-full"></div>
+                        <div className="absolute top-0 left-0 w-full h-full border-4 border-l-indigo-600 border-t-transparent border-r-transparent border-b-transparent rounded-full animate-spin"></div>
+                      </div>
+                    </div>
+                  ) : filteredCharacters.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {filteredCharacters.map((character) => (
+                        <Link key={character.id} href={`/characters/${character.id}`}>
+                          <CharacterCard
+                            title={character.name}
+                            description={character.description || "No description available"}
+                            image={character.avatar_url || "/placeholder-avatar.png"}
+                            color="from-indigo-800/30 to-purple-800/30"
+                            defaultImage={character.name.charAt(0).toUpperCase()}
+                          />
                     </Link>
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-400 py-12">No characters found matching "{searchQuery}"</p>
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-center py-16 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10"
+                    >
+                      <Search className="w-12 h-12 text-gray-500 mx-auto mb-4" />
+                      <p className="text-xl font-medium text-gray-300 mb-2">No characters found</p>
+                      <p className="text-gray-400">No characters matching "{searchQuery}"</p>
+                    </motion.div>
               )}
             </section>
           )}
@@ -450,10 +815,24 @@ export default function ExplorePage() {
           {/* Only show other sections if not searching */}
           {!searchQuery && (
             <>
-              {/* Featured situational chats */}
+                  {/* Top Banner: Featured Characters */}
               <section className="mb-16">
-                <h2 className="text-2xl font-bold mb-6">Featured Situations</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="mb-10 flex items-center space-x-3">
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.1, type: "spring" }}
+                        className="w-12 h-12 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg"
+                      >
+                        <Sparkles className="w-6 h-6 text-white" />
+                      </motion.div>
+                      <div>
+                        <h2 className="text-2xl font-bold">Premium Scenarios</h2>
+                        <p className="text-gray-400">Specially crafted situations and characters</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {situationalChats.map((chat, index) => (
                     <SituationalChatCard
                       key={chat.id}
@@ -469,7 +848,34 @@ export default function ExplorePage() {
               
               {/* What can be done section */}
               <section className="mb-16">
-                <h2 className="text-2xl font-bold mb-6">What Can Be Done</h2>
+                    <div className="flex items-center justify-between mb-10">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 rounded-xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center">
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                          >
+                            <svg className="w-6 h-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          </motion.div>
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold">Discover Possibilities</h2>
+                          <p className="text-gray-400">What you can achieve with our platform</p>
+                        </div>
+                      </div>
+                      
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="hidden md:flex items-center text-sm font-medium text-indigo-400 hover:text-indigo-300"
+                      >
+                        <span>View all features</span>
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </motion.button>
+                    </div>
+                    
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {whatCanBeDone.map((item, index) => (
                     <FeaturedImageCard
@@ -485,8 +891,31 @@ export default function ExplorePage() {
               
               {/* For you section */}
               <section className="mb-16">
-                <h2 className="text-2xl font-bold mb-6">For You</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                    <div className="flex items-center justify-between mb-10">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600/20 to-indigo-600/20 ring-1 ring-white/10 flex items-center justify-center">
+                          <User className="w-6 h-6 text-indigo-400" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold">For You</h2>
+                          <p className="text-gray-400">Characters recommended based on your preferences</p>
+                        </div>
+                      </div>
+                      
+                      <div className="hidden md:flex items-center space-x-2">
+                        <button className="px-3 py-1.5 text-sm rounded-lg bg-black/20 text-gray-300 hover:bg-black/30 transition-colors border border-white/5">
+                          Popular
+                        </button>
+                        <button className="px-3 py-1.5 text-sm rounded-lg bg-black/20 text-gray-300 hover:bg-black/30 transition-colors border border-white/5">
+                          New
+                        </button>
+                        <button className="w-8 h-8 rounded-lg bg-black/20 text-gray-300 hover:bg-black/30 transition-colors flex items-center justify-center border border-white/5">
+                          <Filter className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {featuredCategories.map((character, index) => (
                     <CharacterCard
                       key={index}
@@ -495,15 +924,27 @@ export default function ExplorePage() {
                       image={character.image}
                       color={character.color}
                       defaultImage={character.defaultImage}
+                          featured={index === 0}
                     />
                   ))}
                 </div>
               </section>
               
-              {/* Recommended situations */}
+                  {/* Featured Characters */}
               <section>
-                <h2 className="text-2xl font-bold mb-6">Featured</h2>
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                    <div className="flex items-center justify-between mb-10">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-600/20 to-orange-600/20 ring-1 ring-white/10 flex items-center justify-center">
+                          <Star className="w-6 h-6 text-amber-400" />
+                        </div>
+                        <div>
+                          <h2 className="text-2xl font-bold">Featured</h2>
+                          <p className="text-gray-400">Special characters and scenarios</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {additionalChats.map((chat, index) => (
                     <CharacterCard
                       key={chat.id}
@@ -516,8 +957,45 @@ export default function ExplorePage() {
                   ))}
                 </div>
               </section>
+                  
+                  {/* Pricing CTA Banner */}
+                  <section className="mt-16 mb-8">
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 p-8 shadow-lg"
+                    >
+                      <div className="absolute top-0 right-0 -mt-20 -mr-20 w-40 h-40 bg-white/20 rounded-full blur-3xl"></div>
+                      <div className="absolute bottom-0 left-0 -mb-20 -ml-20 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+                      
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between relative z-10">
+                        <div className="mb-6 md:mb-0">
+                          <h3 className="text-2xl font-bold text-white mb-2">Unlock Premium Features</h3>
+                          <p className="text-indigo-100 max-w-xl">
+                            Take your AI companion experience to the next level with our premium plans. 
+                            Get access to advanced features and exclusive characters.
+                          </p>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row gap-4">
+                          <Link href="/pricing">
+                            <motion.button
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="inline-flex justify-center items-center px-6 py-3 bg-white text-indigo-600 font-medium rounded-lg shadow-md hover:shadow-lg transition-all"
+                            >
+                              View Pricing Plans
+                            </motion.button>
+                          </Link>
+                        </div>
+                      </div>
+                    </motion.div>
+                  </section>
             </>
           )}
+            </div>
+          </main>
         </div>
       </div>
     </ProtectedRoute>
