@@ -157,19 +157,41 @@ const FBXModel = ({ url, scale = 1, position = [0, 0, 0], rotation = [0, 0, 0], 
 
 export default function InteractiveCharacter() {
   const [modelFailed, setModelFailed] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   
   // Point to your FBX model
   const modelUrl = '/models/man.fbx' 
   
   // Customize these props for your specific model
   const modelProps = {
-    scale: 0.14, // Same scale
-    position: [-0.2, -2.4, 0], // Slightly higher than before
+    scale: 0.15, // Same scale
+    position: [0.4, -2.4, 0], // Keep character positioned properly
     rotation: [0, 0, 0] // Remove rotation to keep model upright
   }
 
+  // Check if the device is mobile
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    
+    // Initial check
+    checkIfMobile()
+    
+    // Add event listener for window resize
+    window.addEventListener('resize', checkIfMobile)
+    
+    // Cleanup
+    return () => window.removeEventListener('resize', checkIfMobile)
+  }, [])
+
   const handleModelError = () => {
     setModelFailed(true)
+  }
+
+  // Don't render anything on mobile devices
+  if (isMobile) {
+    return null
   }
 
   return (
@@ -211,4 +233,4 @@ export default function InteractiveCharacter() {
       </div>
     </div>
   )
-} 
+}

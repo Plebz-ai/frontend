@@ -269,7 +269,7 @@ export default function CharacterCreationForm() {
       
       {/* Interactive 3D Character Model */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
-        <div className="absolute bottom-0 left-0 w-[900px] h-[1100px] pointer-events-auto z-10">
+        <div className="absolute bottom-0 left-0 w-[400px] h-[800px] pointer-events-auto z-10">
           <div className="w-full h-full overflow-hidden">
             <InteractiveCharacter />
           </div>
