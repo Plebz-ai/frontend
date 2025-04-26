@@ -294,10 +294,20 @@ export default function Sidebar() {
               exit={{ opacity: 0 }}
               transition={{ staggerChildren: 0.07 }}
             >
-              <TimeSection title="Today" characters={todayChars} />
-              <TimeSection title="Yesterday" characters={yesterdayChars} />
-              <TimeSection title="This Week" characters={thisWeekChars} />
-              <TimeSection title="Last Week" characters={lastWeekChars} />
+              {characters.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-8">No conversations yet</p>
+              ) : (
+                <>
+                  <h3 className={`text-sm font-normal text-gray-300 mb-3 px-3 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
+                    Conversation History
+                  </h3>
+                  <div>
+                    {characters.map(character => (
+                      <CharacterItem key={character.id} character={character} />
+                    ))}
+                  </div>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
