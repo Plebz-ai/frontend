@@ -57,8 +57,39 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       }
     }, 500);
     
-    return () => clearTimeout(timer);
-  }, []);
+    // Make sure demo video plays if using dummy video
+    const ensureDemoVideoPlays = () => {
+      if (usingDummyVideo) {
+        const demoVideo = document.querySelector('video[src="/videos/video.mp4"]') as HTMLVideoElement;
+        if (demoVideo) {
+          demoVideo.volume = 0.7; // Set volume to 70%
+          demoVideo.play()
+            .then(() => console.log('Demo video with audio auto-started'))
+            .catch(err => {
+              console.error('Error auto-starting demo video:', err);
+              // If autoplay with audio fails, try again with user interaction
+              const startAudioButton = document.createElement('button');
+              startAudioButton.textContent = 'Click to enable audio';
+              startAudioButton.className = 'absolute top-12 left-3 z-20 bg-indigo-600 text-white px-3 py-2 rounded-md text-sm font-bold shadow-lg';
+              startAudioButton.onclick = () => {
+                demoVideo.play();
+                startAudioButton.remove();
+              };
+              const container = demoVideo.parentElement;
+              if (container) container.appendChild(startAudioButton);
+            });
+        }
+      }
+    };
+
+    // Try to play the video after component is fully mounted
+    const videoTimer = setTimeout(ensureDemoVideoPlays, 1000);
+    
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(videoTimer);
+    };
+  }, [callState, usingDummyVideo]);
   
   // Log initialMessages when component mounts
   useEffect(() => {
@@ -251,6 +282,29 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       
       // For testing, start dummy video immediately
       setUsingDummyVideo(true)
+      
+      // Ensure video element loads the demo video if in dummy mode
+      if (videoRef.current) {
+        const dummyVideoElement = document.querySelector('video[src="/videos/video.mp4"]') as HTMLVideoElement;
+        if (dummyVideoElement) {
+          dummyVideoElement.volume = 0.7; // Set volume to 70%
+          dummyVideoElement.play()
+            .then(() => console.log('Demo video started playing with audio'))
+            .catch(err => {
+              console.error('Error playing demo video:', err);
+              // Add a visible button for user to click to start audio (browser policy may block auto audio)
+              const audioButton = document.createElement('button');
+              audioButton.textContent = 'Enable Audio';
+              audioButton.className = 'absolute top-12 left-3 z-20 bg-indigo-600 text-white px-3 py-2 rounded-md text-sm font-bold shadow-lg';
+              audioButton.onclick = () => {
+                dummyVideoElement.play();
+                audioButton.remove();
+              };
+              const container = dummyVideoElement.parentElement;
+              if (container) container.appendChild(audioButton);
+            });
+        }
+      }
       
       setCallState('connected')
     } catch (error) {
@@ -447,77 +501,17 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
               <>
                 {/* Replace video with direct HTML when using dummy video */}
                 {usingDummyVideo ? (
-                  <div className="absolute inset-0 bg-gradient-to-br from-purple-700 to-pink-600 animate-gradient-x flex flex-col items-center justify-center p-8">
-                    <div className="absolute top-3 left-3 bg-red-600 text-white px-3 py-1 rounded-md text-sm font-bold shadow-lg">
+                  <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                    <div className="absolute top-3 left-3 bg-red-600 text-white px-3 py-1 rounded-md text-sm font-bold shadow-lg z-10">
                       DEMO MODE
                     </div>
-                    
-                    <div className="text-4xl font-bold text-white mb-6 text-center shadow-text">
-                      AI Character Video Demo
-                    </div>
-                    
-                    <div className="w-32 h-32 rounded-full mb-6 bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white text-6xl font-bold shadow-lg animate-pulse">
-                      {character.name.charAt(0)}
-                    </div>
-                    
-                    <div className="text-2xl font-semibold text-white mb-8 text-center">
-                      {character.name}
-                    </div>
-                    
-                    <div className="flex space-x-3 mb-6">
-                      <div className="h-3 w-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="h-3 w-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                      <div className="h-3 w-3 bg-white rounded-full animate-bounce" style={{ animationDelay: '600ms' }}></div>
-                    </div>
-                    
-                    <div className="text-lg text-white opacity-80 max-w-md text-center">
-                      This is a placeholder for the AI-generated video that will appear here in production.
-                    </div>
-                    
-                    <div className="absolute bottom-3 right-3 text-white text-sm opacity-70">
-                      {new Date().toLocaleTimeString()}
-                    </div>
-                    
-                    {/* Animated background elements */}
-                    <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                      {[...Array(8)].map((_, i) => (
-                        <div 
-                          key={i}
-                          className="absolute rounded-full bg-white opacity-20 animate-float"
-                          style={{
-                            width: `${20 + Math.random() * 50}px`,
-                            height: `${20 + Math.random() * 50}px`,
-                            top: `${Math.random() * 100}%`,
-                            left: `${Math.random() * 100}%`,
-                            animationDuration: `${5 + Math.random() * 10}s`,
-                            animationDelay: `${Math.random() * 5}s`
-                          }}
-                        />
-                      ))}
-                    </div>
-                    
-                    <style jsx global>{`
-                      @keyframes gradient-x {
-                        0% { background-position: 0% 50% }
-                        50% { background-position: 100% 50% }
-                        100% { background-position: 0% 50% }
-                      }
-                      .animate-gradient-x {
-                        background-size: 200% 200%;
-                        animation: gradient-x 15s ease infinite;
-                      }
-                      .shadow-text {
-                        text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-                      }
-                      @keyframes float {
-                        0% { transform: translateY(0px) translateX(0px); }
-                        50% { transform: translateY(-20px) translateX(10px); }
-                        100% { transform: translateY(0px) translateX(0px); }
-                      }
-                      .animate-float {
-                        animation: float 8s ease-in-out infinite;
-                      }
-                    `}</style>
+                    <video
+                      autoPlay
+                      loop
+                      playsInline
+                      className="w-full h-full object-cover"
+                      src="/videos/video.mp4"
+                    />
                   </div>
                 ) : (
                   <video
