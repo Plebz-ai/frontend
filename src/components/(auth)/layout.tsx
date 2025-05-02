@@ -14,7 +14,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       {/* Simple nav bar */}
       <div className="absolute top-0 left-0 w-full p-6 z-10">
         <Link href="/" className="font-semibold text-xl">
-          Scaler
+          plebz.ai
         </Link>
       </div>
       

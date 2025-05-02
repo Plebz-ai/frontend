@@ -174,7 +174,7 @@ export default function Sidebar() {
       <div className="flex items-center justify-between px-5 py-5">
         {!collapsed && (
           <Link href="/explore" className="text-white font-bold text-xl tracking-tight">
-            character.ai
+            plebz.ai
           </Link>
         )}
         <div className="flex items-center">
@@ -330,7 +330,7 @@ export default function Sidebar() {
             href="/upgrade" 
             className="flex items-center justify-center mt-4 py-3 bg-[#1D1F25] hover:bg-[#28293a]/70 text-white rounded-full transition-all border border-[#3f4046]"
           >
-            <span className="font-medium">Upgrade to c.ai</span>
+            <span className="font-medium">Upgrade to plebz.ai</span>
             <span className="text-blue-400 font-bold ml-1">+</span>
           </Link>
         </div>
