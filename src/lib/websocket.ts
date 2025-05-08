@@ -7,7 +7,7 @@ const getWebSocketUrl = () => {
     return `${protocol}//${host}/ws`;
   }
   // Fallback for non-browser environments or SSR
-  return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8082/ws';
+  return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 };
 
 const WS_URL = getWebSocketUrl();
