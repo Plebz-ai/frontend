@@ -135,12 +135,21 @@ export const characterApi = {
       
       // If there's an avatar file, use FormData
       if (data.avatar) {
+        // Create a new FormData instance
         const formData = new FormData();
+        
+        // Convert the image to base64 for more reliable transfer
+        const base64Image = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(data.avatar as File);
+        });
         
         // Add all text fields
         Object.entries(data).forEach(([key, value]) => {
           if (key === 'avatar') {
-            // Skip avatar for now
+            // Skip avatar for now - we'll use the base64 version
           } else if (key === 'tags' && Array.isArray(value)) {
             // Convert tags array to string
             formData.append(key, JSON.stringify(value));
@@ -149,10 +158,12 @@ export const characterApi = {
           }
         });
         
-        // Add the avatar file
-        if (data.avatar) {
-          formData.append('avatar', data.avatar);
-        }
+        // Add the avatar as base64 string
+        formData.append('avatar_base64', base64Image);
+        formData.append('avatar_filename', (data.avatar as File).name);
+        
+        // Also add the regular file as fallback
+        formData.append('avatar', data.avatar);
         
         body = formData;
         // Don't set Content-Type for FormData, browser will set it with boundary
