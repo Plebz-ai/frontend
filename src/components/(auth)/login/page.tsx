@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -9,6 +9,7 @@ import { z } from "zod";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
+import { checkApiServerHealth } from "@/utils/network";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),
@@ -20,6 +21,18 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [networkStatus, setNetworkStatus] = useState<{
+    checking: boolean;
+    online: boolean;
+    serverReachable: boolean;
+    message: string | null;
+  }>({
+    checking: true,
+    online: true,
+    serverReachable: true,
+    message: null,
+  });
+  
   const router = useRouter();
   const { login } = useAuth();
   
@@ -34,12 +47,44 @@ export default function LoginPage() {
       password: "",
     },
   });
+
+  // Check server health on component mount
+  useEffect(() => {
+    const checkServerHealth = async () => {
+      try {
+        // Use proxied API URL
+        const apiBaseUrl = '/api';
+        setNetworkStatus(prev => ({ ...prev, checking: true }));
+        
+        const healthResult = await checkApiServerHealth(apiBaseUrl);
+        console.log('Health check result:', healthResult);
+        
+        setNetworkStatus({
+          checking: false,
+          online: healthResult.online,
+          serverReachable: healthResult.serverReachable,
+          message: healthResult.error || null,
+        });
+      } catch (err) {
+        console.error('Health check error:', err);
+        setNetworkStatus({
+          checking: false,
+          online: navigator.onLine,
+          serverReachable: false,
+          message: 'Could not verify backend server status.',
+        });
+      }
+    };
+    
+    checkServerHealth();
+  }, []);
   
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
     setError(null);
     
     try {
+      console.log('Attempting login with:', data.email);
       await login(data.email, data.password);
       // Redirect is handled in the auth context
     } catch (error) {
@@ -78,6 +123,18 @@ export default function LoginPage() {
           </div>
         )}
         
+        {networkStatus.checking && (
+          <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-sm text-blue-400">
+            Checking connection to server...
+          </div>
+        )}
+
+        {!networkStatus.checking && !networkStatus.serverReachable && !error && (
+          <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-sm text-amber-400">
+            {networkStatus.message || 'Warning: Cannot connect to the authentication server. Login may not work.'}
+          </div>
+        )}
+        
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 relative z-10">
           <Input
             {...register("email")}
@@ -113,6 +170,7 @@ export default function LoginPage() {
             type="submit"
             fullWidth
             isLoading={isLoading}
+            disabled={!networkStatus.serverReachable && !networkStatus.checking}
           >
             {isLoading ? "Signing in..." : "SIGN IN"}
           </Button>
@@ -161,4 +219,4 @@ export default function LoginPage() {
       </p>
     </div>
   );
-} 
+}
