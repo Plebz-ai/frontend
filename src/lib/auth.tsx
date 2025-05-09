@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             'Accept': 'application/json'
           }
         });
+        console.log('AuthProvider /auth/me response status:', response.status, 'token:', token);
         
         if (response.ok) {
           const userData = await response.json();
@@ -108,10 +109,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       const data = await response.json();
-      console.log('Login successful, token received');
+      if (!data.token) {
+        throw new Error('No token received from backend');
+      }
       localStorage.setItem('auth_token', data.token);
-      
-      setUser(data.user);
+      // Immediately verify token by calling /auth/me
+      const verifyResp = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${data.token}`,
+          'Accept': 'application/json'
+        }
+      });
+      if (!verifyResp.ok) {
+        localStorage.removeItem('auth_token');
+        throw new Error('Token verification failed after login');
+      }
+      const userData = await verifyResp.json();
+      setUser(userData);
       router.push('/explore');
     } catch (error) {
       console.error('Login error details:', error);

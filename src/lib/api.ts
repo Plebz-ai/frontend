@@ -132,6 +132,7 @@ export const characterApi = {
       const headers = createHeaders(token);
       
       let body: string | FormData;
+      let requestHeaders = headers;
       
       // If there's an avatar file, use FormData
       if (data.avatar) {
@@ -166,7 +167,8 @@ export const characterApi = {
         formData.append('avatar', data.avatar);
         
         body = formData;
-        // Don't set Content-Type for FormData, browser will set it with boundary
+        // Remove Content-Type header for FormData
+        requestHeaders.delete('Content-Type');
       } else {
         // Use JSON if no file
         body = JSON.stringify(data);
@@ -174,9 +176,8 @@ export const characterApi = {
       
       const response = await fetch(`${API_BASE_URL}/characters`, {
         method: 'POST',
-        headers,
+        headers: requestHeaders,
         body,
-        ...baseFetchConfig,
       });
 
       console.log('Response status:', response.status);
@@ -205,9 +206,11 @@ export const characterApi = {
       headers
     });
 
+    if (response.status === 401) {
+      throw new Error('401: User not authenticated');
+    }
     if (!response.ok) {
       const error = await response.text();
-      console.error('Failed to fetch characters:', error);
       throw new Error(error || 'Failed to fetch characters');
     }
 
@@ -223,9 +226,11 @@ export const characterApi = {
       headers
     });
     
+    if (response.status === 401) {
+      throw new Error('401: User not authenticated');
+    }
     if (!response.ok) {
       const error = await response.text();
-      console.error('Failed to fetch character:', error);
       throw new Error(error || 'Failed to fetch character');
     }
 
