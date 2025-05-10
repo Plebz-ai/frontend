@@ -22,6 +22,7 @@ interface FormData {
   avatar?: File | null
   gender: string
   isFiltered: boolean
+  is_custom: boolean
 }
 
 interface InputFieldProps {
@@ -152,8 +153,9 @@ export default function CharacterCreationForm() {
     tags: [],
     gender: '',
     avatar: null,
-      isFiltered: true
-    })
+    isFiltered: true,
+    is_custom: true
+  })
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -175,8 +177,10 @@ export default function CharacterCreationForm() {
     setError(null)
 
     try {
-      console.log('Submitting character data:', formData)
-      const character = await characterApi.create(formData)
+      // Always set is_custom true before submit
+      const submitData = { ...formData, is_custom: true };
+      console.log('Submitting character data:', submitData)
+      const character = await characterApi.create(submitData)
       
       console.log('Character created:', character)
       refreshCharacters()

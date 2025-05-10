@@ -27,8 +27,11 @@ const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
 });
 
-// API URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api';
+// API URL - now using proxied endpoint
+const API_BASE_URL = '/api';
+
+// Debug URL - log actual URL being used
+console.log('Auth API URL:', API_BASE_URL);
 
 // Auth Provider component
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -47,17 +50,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         
+        console.log('Verifying authentication token with backend...');
         // Verify token with the server
         const response = await fetch(`${API_BASE_URL}/auth/me`, {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
           }
         });
+        console.log('AuthProvider /auth/me response status:', response.status, 'token:', token);
         
         if (response.ok) {
           const userData = await response.json();
           setUser(userData);
+          console.log('User authenticated successfully');
         } else {
+          console.warn('Invalid authentication token, status:', response.status);
           // Token is invalid, remove it
           localStorage.removeItem('auth_token');
         }
@@ -76,26 +84,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     
     try {
+      console.log('Attempting login to:', `${API_BASE_URL}/auth/login`);
+      
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password })
       });
       
+      console.log('Login response status:', response.status);
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Login failed');
+        let errorMessage = 'Login failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || `Login failed with status: ${response.status}`;
+        } catch (e) {
+          errorMessage = `Login failed with status: ${response.status}`;
+        }
+        throw new Error(errorMessage);
       }
       
       const data = await response.json();
+      if (!data.token) {
+        throw new Error('No token received from backend');
+      }
       localStorage.setItem('auth_token', data.token);
-      
-      setUser(data.user);
+      // Immediately verify token by calling /auth/me
+      const verifyResp = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${data.token}`,
+          'Accept': 'application/json'
+        }
+      });
+      if (!verifyResp.ok) {
+        localStorage.removeItem('auth_token');
+        throw new Error('Token verification failed after login');
+      }
+      const userData = await verifyResp.json();
+      setUser(userData);
       router.push('/explore');
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('Login error details:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -202,4 +235,4 @@ export const authApi = {
   logout: async () => {
     localStorage.removeItem('auth_token');
   },
-}; 
+};

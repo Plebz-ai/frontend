@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { createWebSocketClient } from '../../lib/websocket'
+import { createWebSocketClient, getWebSocketUrl } from '../../lib/websocket'
 import { Character } from '../../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
@@ -42,7 +42,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const [isVideoCallActive, setIsVideoCallActive] = useState(false)
   const [showQuickReplies, setShowQuickReplies] = useState(true)
   const [showVideo, setShowVideo] = useState(false)
-  
+
   const wsClientRef = useRef<ReturnType<typeof createWebSocketClient> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -50,7 +50,10 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
-  
+  // Keep track of connection attempts for better error handling
+  const connectionAttemptsRef = useRef(0);
+  const maxConnectionAttempts = 5;
+
   const audioPlayer = useAudioPlayer()
   const { startRecording, stopRecording, isRecordingSupported } = useSpeechRecognition()
 
@@ -61,7 +64,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
   // Generate a persistent session ID or retrieve from localStorage
   const sessionIdRef = useRef<string>('')
-  
+
   useEffect(() => {
     // Try to load a saved session ID for this character
     const savedSessionId = localStorage.getItem(`chat-session-${character.id}`)
@@ -74,7 +77,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       localStorage.setItem(`chat-session-${character.id}`, sessionIdRef.current)
       console.log('Created new session ID:', sessionIdRef.current)
     }
-    
+
     // Notify parent component of session ID
     if (onSessionIdChange) {
       onSessionIdChange(sessionIdRef.current, messages);
@@ -88,7 +91,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     }
   }, [messages, onMessagesChange]);
 
+  // Add detailed logging for WebSocket connection events
   useEffect(() => {
+<<<<<<< HEAD
     if (!character.id) return;
     const clientId = Math.random().toString(36).substring(7)
     const timeout = setTimeout(() => {
@@ -149,25 +154,91 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
         setConnectionError('Failed to connect to server. Please try again later.')
       }
     }, 1000);
+=======
+    const clientId = Math.random().toString(36).substring(7);
+
+    try {
+      console.log('Creating WebSocket client...');
+
+      wsClientRef.current = createWebSocketClient(
+        (data) => {
+          console.log('WebSocket message received:', data);
+          connectionAttemptsRef.current = 0;
+
+          // AI_Layer2 returns 'text_response' for chat
+          if (data.type === 'text_response') {
+            setMessages((prev) => [...prev, {
+              id: Math.random().toString(36).substring(7),
+              sender: 'character',
+              content: data.content,
+              timestamp: Date.now(),
+            }]);
+            setIsTyping(false);
+            setShowQuickReplies(false);
+          } else if (data.type === 'chat') {
+            // Legacy/Go backend
+            setMessages((prev) => [...prev, data.content]);
+            setIsTyping(false);
+            setShowQuickReplies(false);
+          } else if (data.type === 'typing') {
+            setIsTyping(true);
+          } else if (data.type === 'audio') {
+            handleAudioMessage(data.content);
+          } else if (data.type === 'error') {
+            setConnectionError(data.content.message);
+          }
+        },
+        () => {
+          console.log('WebSocket connected successfully');
+          connectionAttemptsRef.current = 0;
+          setIsConnected(true);
+          setConnectionError(null);
+        },
+        () => {
+          console.log('WebSocket disconnected');
+          setIsConnected(false);
+          connectionAttemptsRef.current += 1;
+
+          if (connectionAttemptsRef.current < maxConnectionAttempts) {
+            const delay = Math.min(1000 * Math.pow(1.5, connectionAttemptsRef.current - 1), 10000);
+            console.log(`Reconnecting in ${delay}ms...`);
+            setTimeout(() => {
+              attemptReconnect(character.id.toString(), clientId);
+            }, delay);
+          } else {
+            console.error('Max reconnection attempts reached');
+            setConnectionError('Connection failed after multiple attempts. Please click "Reconnect" to try again.');
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Error initializing WebSocket:', error);
+      setConnectionError('Failed to connect to server. Please try again later.');
+    }
+
+>>>>>>> 39cf41ad8fc3eb015135c10b0b32ea7eb49eaab2
     return () => {
       clearTimeout(timeout);
       if (wsClientRef.current) {
         try {
-          wsClientRef.current.disconnect()
+          wsClientRef.current.disconnect();
         } catch (error) {
-          console.error('Error disconnecting WebSocket:', error)
+          console.error('Error disconnecting WebSocket:', error);
         }
       }
-    }
-  }, [character.id])
+    };
+  }, [character.id]);
 
   // Helper function for reconnection
   const attemptReconnect = (characterId: string, clientId: string) => {
     if (!wsClientRef.current) {
       console.log('Creating new WebSocket client for reconnection...');
-      
+
       wsClientRef.current = createWebSocketClient(
         (data) => {
+          // Reset connection attempts on successful message
+          connectionAttemptsRef.current = 0;
+
           if (data.type === 'chat') {
             setMessages((prev) => [...prev, data.content])
             setIsTyping(false)
@@ -190,24 +261,50 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
         },
         () => {
           console.log('WebSocket reconnected successfully');
+          // Reset connection attempts on successful reconnection
+          connectionAttemptsRef.current = 0;
           setIsConnected(true)
           setConnectionError(null)
         },
         () => {
           console.log('WebSocket disconnected after reconnection attempt');
           setIsConnected(false)
-          setConnectionError('Connection lost. Click "Reconnect" to try again.')
+
+          // Track connection attempts
+          connectionAttemptsRef.current += 1;
+
+          if (connectionAttemptsRef.current < maxConnectionAttempts) {
+            setConnectionError(`Connection lost. Attempt ${connectionAttemptsRef.current} of ${maxConnectionAttempts}. Reconnecting...`)
+
+            // Try to reconnect with backoff
+            const delay = Math.min(1000 * Math.pow(1.5, connectionAttemptsRef.current - 1), 10000);
+            setTimeout(() => {
+              attemptReconnect(character.id.toString(), clientId);
+            }, delay);
+          } else {
+            setConnectionError('Connection failed after multiple attempts. Please click "Reconnect" to try again.')
+          }
         }
       );
     }
-    
+
     console.log('Attempting to reconnect WebSocket...');
     wsClientRef.current.connect(
-      characterId, 
-      clientId, 
+      characterId,
+      clientId,
       sessionIdRef.current
     );
   }
+
+  // Reset connection attempts when user manually reconnects
+  const handleManualReconnect = () => {
+    connectionAttemptsRef.current = 0;
+    if (wsClientRef.current) {
+      wsClientRef.current.disconnect();
+    }
+    const clientId = Math.random().toString(36).substring(7);
+    attemptReconnect(character.id.toString(), clientId);
+  };
 
   useEffect(() => {
     // Auto-scroll to bottom when messages change
@@ -228,13 +325,13 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
         // Assume it's already an array of numbers
         audioData = new Uint8Array(content.data)
       }
-      
+
       setAudioMessages(prev => ({
         ...prev,
         [content.messageId]: audioData
       }))
 
-      
+
       // Auto-play the audio if settings allow
       if (content.messageId && audioData.length > 0) {
         playAudio(content.messageId)
@@ -251,7 +348,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       })
     }
   }
-  
+
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
@@ -264,7 +361,23 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       timestamp: Date.now(),
     }
 
-    wsClientRef.current.sendMessage('chat', message)
+    // Custom character: send full config
+    if (character.is_custom) {
+      wsClientRef.current.sendMessage('text_message', {
+        character_id: character.id,
+        is_custom: true,
+        character_config: character,
+        conversation_id: sessionIdRef.current,
+        content: inputMessage.trim(),
+      })
+    } else {
+      // Predefined: send as before
+      wsClientRef.current.sendMessage('text_message', {
+        character_id: character.id,
+        conversation_id: sessionIdRef.current,
+        content: inputMessage.trim(),
+      })
+    }
     setMessages(prev => [...prev, message])
     setInputMessage('')
     setIsTyping(true)
@@ -290,7 +403,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputMessage(e.target.value)
-    
+
     // Auto-resize textarea
     e.target.style.height = 'auto'
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
@@ -298,9 +411,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
   const handleStartRecording = async () => {
     if (isRecording) return
-    
+
     setIsRecording(true)
-    
+
     try {
       const audioData = await startRecording()
       if (audioData && wsClientRef.current) {
@@ -391,6 +504,10 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     setShowVideo(false)
   }
 
+  const handleVoiceCallClick = () => {
+    alert('Voice call feature is not implemented yet.');
+  };
+
   return (
     <div className="flex flex-col h-full relative bg-[#0e0f13]">
       {connectionError && (
@@ -409,13 +526,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             <p>{connectionError}</p>
             <button 
               className="mt-3 px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-sm rounded-lg transition-colors duration-200"
-              onClick={() => {
-                if (wsClientRef.current) {
-                  wsClientRef.current.disconnect();
-                }
-                const clientId = Math.random().toString(36).substring(7);
-                attemptReconnect(character.id.toString(), clientId);
-              }}
+              onClick={handleManualReconnect}
             >
               Reconnect
             </button>
@@ -441,14 +552,25 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             {isConnected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleVideoCallClick}
-          className="flex items-center px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
-        >
-          <FaVideo className="mr-1.5 text-xs" />
-          <span className="font-medium">Video Call</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleVoiceCallClick}
+            className="flex items-center px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-md hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
+            title="Voice call is not yet implemented. Only text and audio messages are supported."
+          >
+            <FaMicrophone className="mr-1.5 text-xs" />
+            <span className="font-medium">Voice Call</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleVideoCallClick}
+            className="flex items-center px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
+          >
+            <FaVideo className="mr-1.5 text-xs" />
+            <span className="font-medium">Video Call</span>
+          </button>
+        </div>
       </div>
 
       {/* Chat Messages Area with subtle gradient background */}
@@ -590,6 +712,11 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
       {/* Message Input Area - Modern Style */}
       <div className="p-3 border-t border-[#292d3e] bg-[#151722]">
+        {connectionError && (
+          <div className="mb-2 text-red-400 text-sm font-semibold">
+            {connectionError}
+          </div>
+        )}
         <form onSubmit={handleSendMessage} className="flex items-end gap-2 max-w-4xl mx-auto relative">
           <div className="relative flex-1 bg-[#202536] rounded-2xl shadow-inner">
             <textarea
@@ -645,4 +772,4 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       </div>
     </div>
   )
-} 
+}

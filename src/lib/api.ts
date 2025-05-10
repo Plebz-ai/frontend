@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api'
+const API_BASE_URL = '/api';
 
 // User and Authentication interfaces
 export interface User {
@@ -28,6 +28,7 @@ export interface Character {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
+  is_custom?: boolean;
 }
 
 export interface CreateCharacterRequest {
@@ -40,6 +41,7 @@ export interface CreateCharacterRequest {
   dynamicGreetings: boolean;
   tags: string[];
   avatar?: File | null;
+  is_custom?: boolean;
 }
 
 // Helper function to get auth token
@@ -50,18 +52,29 @@ const getAuthToken = (): string | null => {
   return null;
 };
 
+// Base fetch configuration
+const baseFetchConfig: RequestInit = {
+  headers: {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  }
+};
+
+// Helper function to create headers with auth token
+const createHeaders = (token: string | null): Headers => {
+  const headers = new Headers(baseFetchConfig.headers);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return headers;
+};
+
 // Auth API endpoints
 export const authApi = {
   login: async (email: string, password: string): Promise<AuthResponse> => {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+      ...baseFetchConfig,
       body: JSON.stringify({ email, password }),
-      mode: 'cors',
-      credentials: 'omit'
     });
     
     if (!response.ok) {
@@ -74,14 +87,8 @@ export const authApi = {
   
   signup: async (name: string, email: string, password: string): Promise<AuthResponse> => {
     const response = await fetch(`${API_BASE_URL}/auth/signup`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+      ...baseFetchConfig,
       body: JSON.stringify({ name, email, password }),
-      mode: 'cors',
-      credentials: 'omit'
     });
     
     if (!response.ok) {
@@ -94,19 +101,11 @@ export const authApi = {
   
   me: async (): Promise<User> => {
     const token = getAuthToken();
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = createHeaders(token);
     
     const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      ...baseFetchConfig,
       headers,
-      mode: 'cors',
-      credentials: 'omit'
     });
     
     if (!response.ok) {
@@ -127,20 +126,17 @@ export const authApi = {
 // Character API endpoints
 export const characterApi = {
   create: async (data: CreateCharacterRequest): Promise<Character> => {
+    // Always set is_custom true for created characters
+    data.is_custom = true;
     console.log('Making API request to:', `${API_BASE_URL}/characters`);
     console.log('Request data:', data);
     
     try {
       const token = getAuthToken();
-      const headers: HeadersInit = {
-        'Accept': 'application/json',
-      };
-      
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+      const headers = createHeaders(token);
       
       let body: string | FormData;
+      let requestHeaders = headers;
       
       // If there's an avatar file, use FormData
       if (data.avatar) {
@@ -175,19 +171,17 @@ export const characterApi = {
         formData.append('avatar', data.avatar);
         
         body = formData;
-        // Don't set Content-Type for FormData, browser will set it with boundary
+        // Remove Content-Type header for FormData
+        requestHeaders.delete('Content-Type');
       } else {
         // Use JSON if no file
         body = JSON.stringify(data);
-        headers['Content-Type'] = 'application/json';
       }
       
       const response = await fetch(`${API_BASE_URL}/characters`, {
         method: 'POST',
-        headers,
+        headers: requestHeaders,
         body,
-        mode: 'cors',
-        credentials: 'omit'
       });
 
       console.log('Response status:', response.status);
@@ -209,20 +203,19 @@ export const characterApi = {
 
   list: async (): Promise<Character[]> => {
     const token = getAuthToken();
-    const headers: HeadersInit = {};
+    const headers = createHeaders(token);
     
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    // Add cache-busting parameter to avoid browser caching
-    const timestamp = new Date().getTime();
-    const response = await fetch(`${API_BASE_URL}/characters?t=${timestamp}`, {
+    const response = await fetch(`${API_BASE_URL}/characters`, {
+      ...baseFetchConfig,
       headers
     });
-    
+
+    if (response.status === 401) {
+      throw new Error('401: User not authenticated');
+    }
     if (!response.ok) {
-      throw new Error('Failed to fetch characters');
+      const error = await response.text();
+      throw new Error(error || 'Failed to fetch characters');
     }
 
     return response.json();
@@ -230,20 +223,21 @@ export const characterApi = {
 
   get: async (id: string): Promise<Character> => {
     const token = getAuthToken();
-    const headers: HeadersInit = {};
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    const headers = createHeaders(token);
     
     const response = await fetch(`${API_BASE_URL}/characters/${id}`, {
+      ...baseFetchConfig,
       headers
     });
     
+    if (response.status === 401) {
+      throw new Error('401: User not authenticated');
+    }
     if (!response.ok) {
-      throw new Error('Failed to fetch character');
+      const error = await response.text();
+      throw new Error(error || 'Failed to fetch character');
     }
 
     return response.json();
   },
-}; 
+};

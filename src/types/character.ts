@@ -9,6 +9,7 @@ export interface Character {
   avatar_url?: string;
   view_count?: number;
   creator?: string;
+  is_custom?: boolean;
 }
 
 export interface CreateCharacterRequest {
@@ -16,4 +17,5 @@ export interface CreateCharacterRequest {
   description: string;
   personality: string;
   voice_type: string;
+  is_custom?: boolean;
 } 
