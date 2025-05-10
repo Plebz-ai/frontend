@@ -89,74 +89,68 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   }, [messages, onMessagesChange]);
 
   useEffect(() => {
+    if (!character.id) return;
     const clientId = Math.random().toString(36).substring(7)
-    
-    try {
-      console.log('Creating WebSocket client...');
-      
-      wsClientRef.current = createWebSocketClient(
-        (data) => {
-          if (data.type === 'chat') {
-            setMessages((prev) => [...prev, data.content])
-            setIsTyping(false)
-            setShowQuickReplies(false)
-          } else if (data.type === 'typing') {
-            setIsTyping(true)
-          } else if (data.type === 'audio') {
-            handleAudioMessage(data.content)
-          } else if (data.type === 'error') {
-            setConnectionError(data.content.message)
-            console.error('WebSocket returned error:', data.content);
-          } else if (data.type === 'speech_text') {
-            // Speech recognition result from backend
-            setInputMessage(data.content.text)
-          } else if (data.type === 'chat_history') {
-            // Handle receiving chat history from the server
-            if (data.content && Array.isArray(data.content.messages)) {
-              console.log('Received chat history:', data.content.messages.length, 'messages');
-              setMessages(data.content.messages);
-              setShowQuickReplies(false);
+    const timeout = setTimeout(() => {
+      try {
+        console.log('Creating WebSocket client...');
+        wsClientRef.current = createWebSocketClient(
+          (data) => {
+            if (data.type === 'chat') {
+              setMessages((prev) => [...prev, data.content])
+              setIsTyping(false)
+              setShowQuickReplies(false)
+            } else if (data.type === 'typing') {
+              setIsTyping(true)
+            } else if (data.type === 'audio') {
+              handleAudioMessage(data.content)
+            } else if (data.type === 'error') {
+              setConnectionError(data.content.message)
+              console.error('WebSocket returned error:', data.content);
+            } else if (data.type === 'speech_text') {
+              setInputMessage(data.content.text)
+            } else if (data.type === 'chat_history') {
+              if (data.content && Array.isArray(data.content.messages)) {
+                console.log('Received chat history:', data.content.messages.length, 'messages');
+                setMessages(data.content.messages);
+                setShowQuickReplies(false);
+              }
+            } else if (data.type === 'ack') {
+              console.log('Message acknowledged by server:', data.content);
             }
-          } else if (data.type === 'ack') {
-            // Message acknowledgment
-            console.log('Message acknowledged by server:', data.content);
+          },
+          () => {
+            console.log('WebSocket connected successfully');
+            setIsConnected(true)
+            setConnectionError(null)
+          },
+          () => {
+            console.log('WebSocket disconnected');
+            setIsConnected(false)
+            setConnectionError('Connection lost. Attempting to reconnect...')
+            setTimeout(() => {
+              attemptReconnect(character.id.toString(), clientId);
+            }, 3000);
           }
-        },
-        () => {
-          console.log('WebSocket connected successfully');
-          setIsConnected(true)
-          setConnectionError(null)
-        },
-        () => {
-          console.log('WebSocket disconnected');
-          setIsConnected(false)
-          setConnectionError('Connection lost. Attempting to reconnect...')
-          
-          // Try to automatically reconnect
-          setTimeout(() => {
-            attemptReconnect(character.id.toString(), clientId);
-          }, 3000);
-        }
-      )
-
-      if (wsClientRef.current) {
-        console.log('Connecting to WebSocket...');
-        // Include sessionId when connecting to maintain conversation history
-        wsClientRef.current.connect(
-          character.id.toString(), 
-          clientId,
-          sessionIdRef.current // Pass session ID for persistence
         )
-      } else {
-        console.error('Failed to create WebSocket client');
-        setConnectionError('Failed to create WebSocket client')
+        if (wsClientRef.current) {
+          console.log('Connecting to WebSocket...');
+          wsClientRef.current.connect(
+            character.id.toString(),
+            clientId,
+            sessionIdRef.current
+          )
+        } else {
+          console.error('Failed to create WebSocket client');
+          setConnectionError('Failed to create WebSocket client')
+        }
+      } catch (error) {
+        console.error('Error initializing WebSocket:', error)
+        setConnectionError('Failed to connect to server. Please try again later.')
       }
-    } catch (error) {
-      console.error('Error initializing WebSocket:', error)
-      setConnectionError('Failed to connect to server. Please try again later.')
-    }
-
+    }, 1000);
     return () => {
+      clearTimeout(timeout);
       if (wsClientRef.current) {
         try {
           wsClientRef.current.disconnect()

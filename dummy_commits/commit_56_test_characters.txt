@@ -1,3 +1,0 @@
-Commit #56: test(characters): add unit tests
-Date: 2025-03-21
-Description: Changes made for the characters component as part of the AI Character Platform project.

@@ -1,3 +1,0 @@
-Commit #61: docs(auth): update documentation
-Date: 2025-03-26
-Description: Changes made for the auth component as part of the AI Character Platform project.

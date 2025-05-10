@@ -1,3 +1,0 @@
-Commit #54: feat(settings): add messaging functionality
-Date: 2025-03-19
-Description: Changes made for the settings component as part of the AI Character Platform project.

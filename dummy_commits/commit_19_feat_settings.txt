@@ -1,3 +1,0 @@
-Commit #19: feat(settings): add login functionality
-Date: 2025-02-12
-Description: Changes made for the settings component as part of the AI Character Platform project.

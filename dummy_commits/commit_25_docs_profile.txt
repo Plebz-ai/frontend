@@ -1,3 +1,0 @@
-Commit #25: docs(profile): update documentation
-Date: 2025-02-18
-Description: Changes made for the profile component as part of the AI Character Platform project.

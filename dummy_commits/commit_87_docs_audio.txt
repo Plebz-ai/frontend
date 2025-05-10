@@ -1,3 +1,0 @@
-Commit #87: docs(audio): update documentation
-Date: 2025-04-21
-Description: Changes made for the audio component as part of the AI Character Platform project.

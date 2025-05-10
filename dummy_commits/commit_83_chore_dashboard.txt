@@ -1,3 +1,0 @@
-Commit #83: chore(dashboard): update dependencies
-Date: 2025-04-17
-Description: Changes made for the dashboard component as part of the AI Character Platform project.

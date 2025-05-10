@@ -1,3 +1,0 @@
-Commit #23: style(auth): improve UI appearance
-Date: 2025-02-16
-Description: Changes made for the auth component as part of the AI Character Platform project.

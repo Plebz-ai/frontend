@@ -1,3 +1,0 @@
-Commit #66: refactor(characters): optimize code organization
-Date: 2025-03-31
-Description: Changes made for the characters component as part of the AI Character Platform project.

@@ -1,3 +1,0 @@
-Commit #21: fix(video): resolve issues with video module
-Date: 2025-02-14
-Description: Changes made for the video component as part of the AI Character Platform project.

@@ -1,3 +1,0 @@
-Commit #14: refactor(characters): optimize code organization
-Date: 2025-02-07
-Description: Changes made for the characters component as part of the AI Character Platform project.

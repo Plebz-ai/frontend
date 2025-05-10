@@ -1,3 +1,0 @@
-Commit #20: docs(settings): update documentation
-Date: 2025-02-13
-Description: Changes made for the settings component as part of the AI Character Platform project.
