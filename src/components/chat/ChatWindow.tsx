@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react'
 import { format } from 'date-fns'
+import { getWebSocketUrl, getWebSocketUrlWithParams } from '../../lib/websocket'
 
 interface Message {
   id: string
@@ -13,8 +14,6 @@ interface Message {
 interface ChatWindowProps {
   characterId: string
 }
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8081/ws'
 
 export default function ChatWindow({ characterId }: ChatWindowProps) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -62,7 +61,7 @@ export default function ChatWindow({ characterId }: ChatWindowProps) {
         clientIdRef.current = Math.random().toString(36).substring(7)
       }
 
-      const wsUrl = `${WS_URL}?characterId=${characterId}&clientId=${clientIdRef.current}`
+      const wsUrl = getWebSocketUrlWithParams(characterId, clientIdRef.current)
       console.log('Connecting to WebSocket:', wsUrl)
       
       const ws = new WebSocket(wsUrl)
@@ -84,12 +83,12 @@ export default function ChatWindow({ characterId }: ChatWindowProps) {
         setConnected(false)
         setIsLoading(false)
         setIsConnecting(false)
-        setError('Connection closed. Click "Reconnect" to try again.')
+        setError(event.reason || 'Connection closed. Click "Reconnect" to try again.')
       }
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error)
-        setError('Connection error. Click "Reconnect" to try again.')
+        setError(error instanceof Event ? 'Connection error. Click "Reconnect" to try again.' : String(error))
         setConnected(false)
         setIsLoading(false)
         setIsConnecting(false)
@@ -157,18 +156,21 @@ export default function ChatWindow({ characterId }: ChatWindowProps) {
     try {
       const message = {
         type: 'chat',
-        content: inputMessage.trim()
+        content: {
+          id: `${Date.now()}-${Math.random()}`,
+          sender: 'user',
+          content: inputMessage.trim(),
+          timestamp: Date.now()
+        }
       }
 
       wsRef.current.send(JSON.stringify(message))
-      
       // Optimistically add the message to the UI
       setMessages((prev) => [...prev, {
-        id: `${Date.now()}-${Math.random()}`,
-        ...message,
-        timestamp: new Date()
+        ...message.content,
+        type: 'user',
+        // id, sender, content, timestamp already set
       }])
-      
       setInputMessage('')
     } catch (err) {
       console.error('Error sending message:', err)
@@ -215,18 +217,18 @@ export default function ChatWindow({ characterId }: ChatWindowProps) {
           messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
                 className={`rounded-lg px-4 py-2 max-w-[70%] ${
-                  message.type === 'user'
+                  message.sender === 'user'
                     ? 'bg-indigo-600 text-white'
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
                 <div className="break-words">{message.content}</div>
                 <div className="text-xs mt-1 opacity-75">
-                  {format(message.timestamp, 'HH:mm:ss')}
+                  {format(typeof message.timestamp === 'number' ? new Date(message.timestamp) : message.timestamp, 'HH:mm:ss')}
                 </div>
               </div>
             </div>
@@ -237,13 +239,14 @@ export default function ChatWindow({ characterId }: ChatWindowProps) {
 
       <form onSubmit={sendMessage} className="p-4 border-t">
         <div className="flex space-x-4">
-          <input
-            type="text"
+          <textarea
+            ref={inputRef}
             value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            placeholder={connected ? "Type your message..." : "Waiting to connect..."}
+            onChange={e => setInputMessage(e.target.value)}
             disabled={!connected}
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition-all"
+            placeholder={connected ? 'Type your message...' : (error || 'Connecting...')}
+            className="w-full p-3 pl-4 pr-10 bg-transparent text-gray-900 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none resize-none min-h-[48px] max-h-[120px] placeholder-gray-500"
+            rows={1}
           />
           <button
             type="submit"
@@ -254,6 +257,9 @@ export default function ChatWindow({ characterId }: ChatWindowProps) {
           </button>
         </div>
       </form>
+      {error && (
+        <div className="text-red-500 text-sm mt-2">{error}</div>
+      )}
     </div>
   )
 } 

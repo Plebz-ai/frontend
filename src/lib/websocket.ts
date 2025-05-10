@@ -10,6 +10,15 @@ const getWebSocketUrl = () => {
   return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 };
 
+// Enhance getWebSocketUrl to accept characterId and clientId
+export const getWebSocketUrlWithParams = (characterId?: string, clientId?: string) => {
+  const base = getWebSocketUrl();
+  const params = [];
+  if (characterId) params.push(`characterId=${encodeURIComponent(characterId)}`);
+  if (clientId) params.push(`clientId=${encodeURIComponent(clientId)}`);
+  return params.length ? `${base}?${params.join('&')}` : base;
+};
+
 const WS_URL = getWebSocketUrl();
 
 // Detect browser environment
@@ -302,7 +311,7 @@ class WebSocketManager {
 
   private initiateConnection(key: ConnectionKey, characterId: string, clientId: string, sessionId?: string): void {
     try {
-      let wsUrl = `${WS_URL}?characterId=${characterId}&clientId=${clientId}`;
+      let wsUrl = getWebSocketUrlWithParams(characterId, clientId);
       if (sessionId) {
         wsUrl += `&sessionId=${sessionId}`;
       }

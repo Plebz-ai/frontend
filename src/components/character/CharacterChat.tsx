@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { createWebSocketClient } from '../../lib/websocket'
+import { createWebSocketClient, getWebSocketUrl } from '../../lib/websocket'
 import { Character } from '../../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
@@ -417,6 +417,10 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     setShowVideo(false)
   }
 
+  const handleVoiceCallClick = () => {
+    alert('Voice call feature is not implemented yet.');
+  };
+
   return (
     <div className="flex flex-col h-full relative bg-[#0e0f13]">
       {connectionError && (
@@ -461,14 +465,25 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             {isConnected ? 'Connected' : 'Disconnected'}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={handleVideoCallClick}
-          className="flex items-center px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
-        >
-          <FaVideo className="mr-1.5 text-xs" />
-          <span className="font-medium">Video Call</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleVoiceCallClick}
+            className="flex items-center px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-md hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
+            title="Voice call is not yet implemented. Only text and audio messages are supported."
+          >
+            <FaMicrophone className="mr-1.5 text-xs" />
+            <span className="font-medium">Voice Call</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleVideoCallClick}
+            className="flex items-center px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
+          >
+            <FaVideo className="mr-1.5 text-xs" />
+            <span className="font-medium">Video Call</span>
+          </button>
+        </div>
       </div>
 
       {/* Chat Messages Area with subtle gradient background */}
@@ -610,6 +625,11 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
       {/* Message Input Area - Modern Style */}
       <div className="p-3 border-t border-[#292d3e] bg-[#151722]">
+        {connectionError && (
+          <div className="mb-2 text-red-400 text-sm font-semibold">
+            {connectionError}
+          </div>
+        )}
         <form onSubmit={handleSendMessage} className="flex items-end gap-2 max-w-4xl mx-auto relative">
           <div className="relative flex-1 bg-[#202536] rounded-2xl shadow-inner">
             <textarea
