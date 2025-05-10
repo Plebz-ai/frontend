@@ -1,13 +1,16 @@
 // Determine WebSocket URL dynamically if possible
+// For custom character chat, connect directly to AI_Layer2 (default: ws://localhost:5000/ws)
 const getWebSocketUrl = () => {
   if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use the same host as the current page for WebSocket
-    const host = window.location.host;
-    return `${protocol}//${host}/ws`;
+    // Allow override via env var
+    if (process.env.NEXT_PUBLIC_WS_URL) {
+      return process.env.NEXT_PUBLIC_WS_URL;
+    }
+    // Default to AI_Layer2 FastAPI server
+    return 'ws://localhost:5000/ws';
   }
   // Fallback for non-browser environments or SSR
-  return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
+  return process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:5000/ws';
 };
 
 // Enhance getWebSocketUrl to accept characterId and clientId
@@ -407,30 +410,6 @@ class WebSocketManager {
     }
   }
 
-  public sendMessage(characterId: string, clientId: string, type: string, content: any): boolean {
-    const key = this.getConnectionKey(characterId, clientId);
-    const ws = this.connections.get(key);
-
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      console.warn(
-        `Cannot send message - WebSocket is not open for ${key}. Current state: ${
-          ws ? this.getReadyStateString(ws.readyState) : 'no connection'
-        }`
-      );
-      this.attemptReconnect(key, characterId, clientId, ws?.sessionId);
-      return false;
-    }
-
-    try {
-      const message: WebSocketMessage = { type, content };
-      ws.send(JSON.stringify(message));
-      return true;
-    } catch (error) {
-      console.error(`Error sending message for ${key}:`, error);
-      return false;
-    }
-  }
-
   private getReadyStateString(readyState: number): string {
     switch (readyState) {
       case WebSocket.CONNECTING:
@@ -629,6 +608,7 @@ export function createWebSocketClient(
     }
   };
 
+  // Send a message of any type with any payload. For custom characters, include is_custom and character_config in content.
   const sendMessage = (type: string, content: any): boolean => {
     if (!activeCharacterId || !activeClientId) {
       console.error('Cannot send message - no active connection');

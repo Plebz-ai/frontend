@@ -103,19 +103,26 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           console.log('WebSocket message received:', data);
           connectionAttemptsRef.current = 0;
 
-          if (data.type === 'chat') {
-            console.log('Chat message received:', data.content);
+          // AI_Layer2 returns 'text_response' for chat
+          if (data.type === 'text_response') {
+            setMessages((prev) => [...prev, {
+              id: Math.random().toString(36).substring(7),
+              sender: 'character',
+              content: data.content,
+              timestamp: Date.now(),
+            }]);
+            setIsTyping(false);
+            setShowQuickReplies(false);
+          } else if (data.type === 'chat') {
+            // Legacy/Go backend
             setMessages((prev) => [...prev, data.content]);
             setIsTyping(false);
             setShowQuickReplies(false);
           } else if (data.type === 'typing') {
-            console.log('Typing indicator received');
             setIsTyping(true);
           } else if (data.type === 'audio') {
-            console.log('Audio message received');
             handleAudioMessage(data.content);
           } else if (data.type === 'error') {
-            console.error('WebSocket error message:', data.content);
             setConnectionError(data.content.message);
           }
         },
@@ -290,7 +297,23 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       timestamp: Date.now(),
     }
 
-    wsClientRef.current.sendMessage('chat', message)
+    // Custom character: send full config
+    if (character.is_custom) {
+      wsClientRef.current.sendMessage('text_message', {
+        character_id: character.id,
+        is_custom: true,
+        character_config: character,
+        conversation_id: sessionIdRef.current,
+        content: inputMessage.trim(),
+      })
+    } else {
+      // Predefined: send as before
+      wsClientRef.current.sendMessage('text_message', {
+        character_id: character.id,
+        conversation_id: sessionIdRef.current,
+        content: inputMessage.trim(),
+      })
+    }
     setMessages(prev => [...prev, message])
     setInputMessage('')
     setIsTyping(true)

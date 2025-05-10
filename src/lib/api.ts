@@ -28,6 +28,7 @@ export interface Character {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
+  is_custom?: boolean;
 }
 
 export interface CreateCharacterRequest {
@@ -40,6 +41,7 @@ export interface CreateCharacterRequest {
   dynamicGreetings: boolean;
   tags: string[];
   avatar?: File | null;
+  is_custom?: boolean;
 }
 
 // Helper function to get auth token
@@ -124,6 +126,8 @@ export const authApi = {
 // Character API endpoints
 export const characterApi = {
   create: async (data: CreateCharacterRequest): Promise<Character> => {
+    // Always set is_custom true for created characters
+    data.is_custom = true;
     console.log('Making API request to:', `${API_BASE_URL}/characters`);
     console.log('Request data:', data);
     
