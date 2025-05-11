@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { createWebSocketClient } from '../../lib/websocket'
+import { createWebSocketClient, getWebSocketUrlForCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
 import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle } from 'react-icons/fa'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
@@ -110,11 +110,13 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
 
   // Connect to WebSocket when component mounts
   useEffect(() => {
+    // Always use a new clientId for each connection
     const clientId = Math.random().toString(36).substring(7)
-    
-    wsClientRef.current = createWebSocketClient(
+    const wsClient = createWebSocketClient(
+      character,
+      clientId,
+      sessionId,
       (data) => {
-        console.log('Received websocket data:', data.type);
         if (data.type === 'video') {
           handleVideoData(data.content)
         } else if (data.type === 'call_state') {
@@ -128,13 +130,9 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
         } else if (data.type === 'typing') {
           setIsTyping(true)
         } else if (data.type === 'chat_history') {
-          // Handle receiving chat history from the server
           if (data.content && Array.isArray(data.content.messages)) {
-            console.log('Received chat history:', data.content.messages.length, 'messages');
-            // Use chat history from server if we didn't receive initialMessages
             if (initialMessages.length === 0) {
-              console.log('Using chat history from server since no initial messages were provided');
-              setMessages(data.content.messages);
+              setMessages(data.content.messages)
             }
           }
         }
@@ -142,34 +140,23 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       () => {
         setIsConnected(true)
         setCallState('connected')
-        console.log('WebSocket connected successfully')
-        
-        // If no initial messages were provided and we have a sessionId,
-        // explicitly request chat history
         if (initialMessages.length === 0 && sessionId) {
-          console.log('No initial messages provided but sessionId exists, requesting chat history');
-          wsClientRef.current?.sendMessage('get_chat_history', { 
+          wsClient.sendMessage('get_chat_history', {
             character_id: character.id,
             session_id: sessionId
-          });
+          })
         }
       },
       () => {
         setIsConnected(false)
         setCallState('error')
         setError('Connection lost. Please try again.')
-        console.error('WebSocket connection lost')
+      },
+      (err) => {
+        setError('WebSocket error: ' + (err?.message || err))
       }
     )
-
-    // Connect with sessionId if provided
-    console.log('Connecting to WebSocket with sessionId:', sessionId)
-    wsClientRef.current.connect(
-      character.id.toString(), 
-      clientId,
-      sessionId // This will maintain chat history with the main chat interface
-    )
-
+    wsClientRef.current = wsClient
     return () => {
       cleanup()
     }
@@ -365,20 +352,16 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
     if (!inputMessage.trim() || !wsClientRef.current) return
-
     const message: Message = {
       id: Math.random().toString(36).substring(7),
       sender: 'user',
       content: inputMessage.trim(),
       timestamp: Date.now(),
     }
-
     wsClientRef.current.sendMessage('chat', message)
     setMessages(prev => [...prev, message])
     setInputMessage('')
     setIsTyping(true)
-
-    // Reset textarea height
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
     }

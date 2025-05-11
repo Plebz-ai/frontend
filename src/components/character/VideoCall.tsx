@@ -1,3 +1,4 @@
+// This file is a placeholder. Main video call logic is in components/video-call/VideoCall.tsx
 import React, { useEffect, useRef, useState } from 'react'
 import SimplePeer from 'simple-peer'
 import { Character } from '../../lib/api'

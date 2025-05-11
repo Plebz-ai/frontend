@@ -1,13 +1,14 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { createWebSocketClient, getWebSocketUrl } from '../../lib/websocket'
+import { createWebSocketClient, getWebSocketUrlForCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 import { FaMicrophone, FaMicrophoneSlash, FaPaperPlane, FaSpinner, FaVolumeUp, FaVideo, FaChevronRight, FaSmile } from 'react-icons/fa'
 import VideoCall from '../../components/video-call/VideoCall'
+import { useRobustWebSocket } from '../../hooks/useRobustWebSocket'
 
 interface Message {
   id: string
@@ -42,6 +43,10 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const [isVideoCallActive, setIsVideoCallActive] = useState(false)
   const [showQuickReplies, setShowQuickReplies] = useState(true)
   const [showVideo, setShowVideo] = useState(false)
+  const [missedMessages, setMissedMessages] = useState<Message[]>([])
+  const [wasDisconnected, setWasDisconnected] = useState(false)
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
+  const [reconnectBlocked, setReconnectBlocked] = useState(false)
 
   const wsClientRef = useRef<ReturnType<typeof createWebSocketClient> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -50,39 +55,42 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
-  // Keep track of connection attempts for better error handling
-  const connectionAttemptsRef = useRef(0);
-  const maxConnectionAttempts = 5;
-
-  const audioPlayer = useAudioPlayer()
-  const { startRecording, stopRecording, isRecordingSupported } = useSpeechRecognition()
-
   // WebRTC setup
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
 
-  // Generate a persistent session ID or retrieve from localStorage
+  // Generate a persistent session ID and client ID per character
   const sessionIdRef = useRef<string>('')
+  const clientIdRef = useRef<string>('')
+
+  const { startRecording, stopRecording, isRecordingSupported } = useSpeechRecognition();
 
   useEffect(() => {
-    // Try to load a saved session ID for this character
+    console.warn('[CharacterChat] Mounted for character.id:', character.id, 'sessionId:', sessionIdRef.current)
+    // Generate or load sessionId and clientId for this character
     const savedSessionId = localStorage.getItem(`chat-session-${character.id}`)
     if (savedSessionId) {
       sessionIdRef.current = savedSessionId
-      console.log('Using existing session ID:', savedSessionId)
     } else {
-      // Create a new session ID
       sessionIdRef.current = `session-${character.id}-${Math.random().toString(36).substring(7)}-${Date.now()}`
       localStorage.setItem(`chat-session-${character.id}`, sessionIdRef.current)
-      console.log('Created new session ID:', sessionIdRef.current)
     }
-
-    // Notify parent component of session ID
+    // Generate or load clientId for this character
+    const savedClientId = localStorage.getItem(`chat-client-${character.id}`)
+    if (savedClientId) {
+      clientIdRef.current = savedClientId
+    } else {
+      clientIdRef.current = Math.random().toString(36).substring(7)
+      localStorage.setItem(`chat-client-${character.id}`, clientIdRef.current)
+    }
     if (onSessionIdChange) {
-      onSessionIdChange(sessionIdRef.current, messages);
+      onSessionIdChange(sessionIdRef.current, messages)
     }
-  }, [character.id, onSessionIdChange]);
+    return () => {
+      console.warn('[CharacterChat] Unmounted for character.id:', character.id, 'sessionId:', sessionIdRef.current)
+    }
+  }, [character.id, onSessionIdChange])
 
   // Notify parent when messages change
   useEffect(() => {
@@ -91,156 +99,106 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     }
   }, [messages, onMessagesChange]);
 
-  // Add detailed logging for WebSocket connection events
-  useEffect(() => {
-    const clientId = Math.random().toString(36).substring(7);
-
-    try {
-      console.log('Creating WebSocket client...');
-
-      wsClientRef.current = createWebSocketClient(
-        (data) => {
-          console.log('WebSocket message received:', data);
-          connectionAttemptsRef.current = 0;
-
-          // AI_Layer2 returns 'text_response' for chat
-          if (data.type === 'text_response') {
-            setMessages((prev) => [...prev, {
-              id: Math.random().toString(36).substring(7),
-              sender: 'character',
-              content: data.content,
-              timestamp: Date.now(),
-            }]);
-            setIsTyping(false);
-            setShowQuickReplies(false);
-          } else if (data.type === 'chat') {
-            // Legacy/Go backend
+  // --- Robust WebSocket Hook ---
+  const wsUrl = getWebSocketUrlForCharacter(character, clientIdRef.current, sessionIdRef.current);
+  const ws = useRobustWebSocket({
+    url: wsUrl,
+    onOpen: () => {
+      setIsConnected(true);
+      setConnectionError(null);
+      setReconnectAttempts(0);
+      setReconnectBlocked(false);
+      if (wasDisconnected && missedMessages.length > 0) {
+        setMissedMessages([]); // Clear banner on new connect
+      }
+      setWasDisconnected(false);
+    },
+    onClose: (event) => {
+      setIsConnected(false);
+      setWasDisconnected(true);
+      console.log('[WS CLOSE]', event.code, event.reason, event);
+      if (event && event.code && ![1000, 1001, 1005, 1006].includes(event.code)) {
+        setConnectionError(
+          `Connection closed (code=${event.code}, reason=${event.reason || 'no reason'}). Please click "Reconnect" to try again.`
+        );
+      }
+      // Exponential backoff for reconnect attempts
+      if (reconnectAttempts < 5) {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000); // 1s, 2s, 4s, 8s, 10s
+        setTimeout(() => {
+          setReconnectAttempts((prev) => prev + 1);
+        }, delay);
+      } else {
+        setReconnectBlocked(true);
+      }
+    },
+    onError: (err) => {
+      setConnectionError('WebSocket error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    },
+    onMessage: (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        // Log all received messages for debugging
+        console.log('[WS MESSAGE]', data);
+        switch (data.type) {
+          case 'connected':
+            // Optionally show connected status
+            break;
+          case 'ack':
+            // Optionally handle ack
+            break;
+          case 'text_response':
+            if (data.response) {
+              setMessages((prev) => [...prev, {
+                id: Math.random().toString(36).substring(7),
+                sender: 'character',
+                content: data.response,
+                timestamp: Date.now(),
+              }]);
+              setIsTyping(false);
+              setShowQuickReplies(false);
+            }
+            break;
+          case 'voice_response':
+            // Handle voice response
+            break;
+          case 'chat':
+            // If we were disconnected, treat as missed message
+            if (wasDisconnected) {
+              setMissedMessages((prev) => [...prev, data.content]);
+            }
             setMessages((prev) => [...prev, data.content]);
             setIsTyping(false);
             setShowQuickReplies(false);
-          } else if (data.type === 'typing') {
+            break;
+          case 'typing':
             setIsTyping(true);
-          } else if (data.type === 'audio') {
+            break;
+          case 'audio':
             handleAudioMessage(data.content);
-          } else if (data.type === 'error') {
-            setConnectionError(data.content.message);
-          }
-        },
-        () => {
-          console.log('WebSocket connected successfully');
-          connectionAttemptsRef.current = 0;
-          setIsConnected(true);
-          setConnectionError(null);
-        },
-        () => {
-          console.log('WebSocket disconnected');
-          setIsConnected(false);
-          connectionAttemptsRef.current += 1;
-
-          if (connectionAttemptsRef.current < maxConnectionAttempts) {
-            const delay = Math.min(1000 * Math.pow(1.5, connectionAttemptsRef.current - 1), 10000);
-            console.log(`Reconnecting in ${delay}ms...`);
-            setTimeout(() => {
-              attemptReconnect(character.id.toString(), clientId);
-            }, delay);
-          } else {
-            console.error('Max reconnection attempts reached');
-            setConnectionError('Connection failed after multiple attempts. Please click "Reconnect" to try again.');
-          }
+            break;
+          case 'error':
+            setConnectionError(data.content?.message || data.message || 'Unknown error');
+            break;
+          default:
+            // Ignore unknown types, do not throw
+            console.warn('[WS] Unknown message type:', data.type, data);
         }
-      );
-    } catch (error) {
-      console.error('Error initializing WebSocket:', error);
-      setConnectionError('Failed to connect to server. Please try again later.');
-    }
-
-    return () => {
-      if (wsClientRef.current) {
-        try {
-          wsClientRef.current.disconnect();
-        } catch (error) {
-          console.error('Error disconnecting WebSocket:', error);
-        }
+      } catch (err) {
+        console.error('[WS] Error parsing message', err, event.data);
       }
-    };
-  }, [character.id]);
+    },
+    maxAttempts: 7,
+    reconnectableCodes: [1000, 1001, 1005, 1006],
+  });
 
-  // Helper function for reconnection
-  const attemptReconnect = (characterId: string, clientId: string) => {
-    if (!wsClientRef.current) {
-      console.log('Creating new WebSocket client for reconnection...');
-
-      wsClientRef.current = createWebSocketClient(
-        (data) => {
-          // Reset connection attempts on successful message
-          connectionAttemptsRef.current = 0;
-
-          if (data.type === 'chat') {
-            setMessages((prev) => [...prev, data.content])
-            setIsTyping(false)
-            setShowQuickReplies(false)
-          } else if (data.type === 'typing') {
-            setIsTyping(true)
-          } else if (data.type === 'audio') {
-            handleAudioMessage(data.content)
-          } else if (data.type === 'error') {
-            setConnectionError(data.content.message)
-            console.error('WebSocket returned error:', data.content);
-          } else if (data.type === 'speech_text') {
-            setInputMessage(data.content.text)
-          } else if (data.type === 'chat_history') {
-            if (data.content && Array.isArray(data.content.messages)) {
-              console.log('Received chat history on reconnect:', data.content.messages.length, 'messages');
-              setMessages(data.content.messages);
-            }
-          }
-        },
-        () => {
-          console.log('WebSocket reconnected successfully');
-          // Reset connection attempts on successful reconnection
-          connectionAttemptsRef.current = 0;
-          setIsConnected(true)
-          setConnectionError(null)
-        },
-        () => {
-          console.log('WebSocket disconnected after reconnection attempt');
-          setIsConnected(false)
-
-          // Track connection attempts
-          connectionAttemptsRef.current += 1;
-
-          if (connectionAttemptsRef.current < maxConnectionAttempts) {
-            setConnectionError(`Connection lost. Attempt ${connectionAttemptsRef.current} of ${maxConnectionAttempts}. Reconnecting...`)
-
-            // Try to reconnect with backoff
-            const delay = Math.min(1000 * Math.pow(1.5, connectionAttemptsRef.current - 1), 10000);
-            setTimeout(() => {
-              attemptReconnect(character.id.toString(), clientId);
-            }, delay);
-          } else {
-            setConnectionError('Connection failed after multiple attempts. Please click "Reconnect" to try again.')
-          }
-        }
-      );
+  // Effect to trigger reconnect on reconnectAttempts change
+  useEffect(() => {
+    if (reconnectAttempts > 0 && reconnectAttempts < 5 && !isConnected && !reconnectBlocked) {
+      ws?.close(); // Ensure previous socket is closed
+      // The useRobustWebSocket hook will re-create the connection due to url/state change
     }
-
-    console.log('Attempting to reconnect WebSocket...');
-    wsClientRef.current.connect(
-      characterId,
-      clientId,
-      sessionIdRef.current
-    );
-  }
-
-  // Reset connection attempts when user manually reconnects
-  const handleManualReconnect = () => {
-    connectionAttemptsRef.current = 0;
-    if (wsClientRef.current) {
-      wsClientRef.current.disconnect();
-    }
-    const clientId = Math.random().toString(36).substring(7);
-    attemptReconnect(character.id.toString(), clientId);
-  };
+  }, [reconnectAttempts, isConnected, reconnectBlocked, ws]);
 
   useEffect(() => {
     // Auto-scroll to bottom when messages change
@@ -288,8 +246,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputMessage.trim() || !wsClientRef.current) return
+    if (!inputMessage.trim() || !ws) return
 
+    // The Go backend expects: { id, sender, content, timestamp }
     const message: Message = {
       id: Math.random().toString(36).substring(7),
       sender: 'user',
@@ -297,23 +256,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       timestamp: Date.now(),
     }
 
-    // Custom character: send full config
-    if (character.is_custom) {
-      wsClientRef.current.sendMessage('text_message', {
-        character_id: character.id,
-        is_custom: true,
-        character_config: character,
-        conversation_id: sessionIdRef.current,
-        content: inputMessage.trim(),
-      })
-    } else {
-      // Predefined: send as before
-      wsClientRef.current.sendMessage('text_message', {
-        character_id: character.id,
-        conversation_id: sessionIdRef.current,
-        content: inputMessage.trim(),
-      })
-    }
+    ws.send(JSON.stringify({ type: 'chat', content: message }))
     setMessages(prev => [...prev, message])
     setInputMessage('')
     setIsTyping(true)
@@ -352,11 +295,11 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
     try {
       const audioData = await startRecording()
-      if (audioData && wsClientRef.current) {
+      if (audioData && ws) {
         // Convert Uint8Array to base64 string
         const binary = Array.from(audioData).map(byte => String.fromCharCode(byte)).join('')
         const base64String = btoa(binary)
-        wsClientRef.current.sendMessage('audio', { data: base64String })
+        ws.send(JSON.stringify({ type: 'audio', data: base64String }))
       }
     } catch (error) {
       console.error('Recording error:', error)
@@ -462,7 +405,11 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             <p>{connectionError}</p>
             <button 
               className="mt-3 px-4 py-2 bg-red-700 hover:bg-red-600 text-white text-sm rounded-lg transition-colors duration-200"
-              onClick={handleManualReconnect}
+              onClick={() => {
+                if (ws) {
+                  ws.close();
+                }
+              }}
             >
               Reconnect
             </button>
@@ -706,6 +653,43 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           </div>
         </form>
       </div>
+
+      {/* Missed Messages Banner */}
+      {missedMessages.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-3 bg-yellow-900/30 border border-yellow-800 text-yellow-100 text-sm rounded-lg m-4 flex items-center z-50"
+        >
+          <span className="font-medium mr-2">You have {missedMessages.length} missed message(s) delivered after reconnect.</span>
+          <button
+            className="ml-auto px-3 py-1 bg-yellow-700 hover:bg-yellow-600 text-white text-xs rounded-lg"
+            onClick={() => setMissedMessages([])}
+          >
+            Dismiss
+          </button>
+        </motion.div>
+      )}
+
+      {reconnectBlocked && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-3 bg-red-900/30 border border-red-800 text-red-100 text-sm rounded-lg m-4 flex items-center z-50"
+        >
+          <span className="font-medium mr-2">Connection lost. Please click Reconnect to try again.</span>
+          <button
+            className="ml-auto px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded-lg"
+            onClick={() => {
+              setReconnectAttempts(0);
+              setReconnectBlocked(false);
+              ws?.close();
+            }}
+          >
+            Reconnect
+          </button>
+        </motion.div>
+      )}
     </div>
   )
 }
