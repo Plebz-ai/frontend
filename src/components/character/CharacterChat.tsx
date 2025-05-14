@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { createWebSocketClient, getWebSocketUrlForCharacter } from '../../lib/websocket'
+import { createWebSocketClient, getWebSocketUrlForCharacter, isCustomCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
@@ -104,7 +104,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     // Setup WebSocket client for this character
     if (!character || !clientIdRef.current || !sessionIdRef.current) return;
 
-    console.log('[CharacterChat] character object:', character);
+    console.log('[CharacterChat] Character object:', character);
+    console.log('[CharacterChat] Is custom character?', 
+      isCustomCharacter(character) ? 'YES (will use AI Layer)' : 'NO (will use Go backend)');
 
     // Clean up previous client if any
     wsClientRef.current?.disconnect();
@@ -114,8 +116,20 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       clientIdRef.current,
       sessionIdRef.current,
       (data) => {
-        console.log('WebSocket message received:', data);
+        console.log('[CharacterChat] WebSocket message received:', data);
+        
+        // Handle errors first
+        if (data.error) {
+          console.error('[CharacterChat] Error received:', data.error);
+          setConnectionError(
+            typeof data.error === 'string'
+              ? data.error
+              : (data.error.llm2 || data.error.llm1 || data.error.connection || 'Something went wrong.')
+          );
+        }
+        
         if (data.type === 'text_response') {
+          // Response from AI Layer (orchestrator)
           setMessages((prev) => [...prev, {
             id: Math.random().toString(36).substring(7),
             sender: 'character',
@@ -124,14 +138,8 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           }]);
           setIsTyping(false);
           setShowQuickReplies(false);
-          if (data.error) {
-            setConnectionError(
-              typeof data.error === 'string'
-                ? data.error
-                : (data.error.llm2 || data.error.llm1 || 'Something went wrong.')
-            );
-          }
         } else if (data.type === 'chat') {
+          // Response from Go backend
           setMessages((prev) => [...prev, data.content]);
           setIsTyping(false);
           setShowQuickReplies(false);
@@ -139,33 +147,31 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           setIsTyping(true);
         } else if (data.type === 'audio') {
           handleAudioMessage(data.content);
-        } else if (data.type === 'error') {
-          setConnectionError(data.content?.message || data.message || 'Unknown error');
         } else {
           // Ignore unknown types, do not throw
-          console.warn('[WS] Unknown message type:', data.type, data);
+          console.warn('[CharacterChat] Unknown message type:', data.type, data);
         }
       },
       () => {
-        console.log('WebSocket connected successfully');
+        console.log('[CharacterChat] Connected successfully');
         setIsConnected(true);
         setConnectionError(null);
       },
       () => {
-        console.log('WebSocket disconnected');
+        console.log('[CharacterChat] Disconnected');
         setIsConnected(false);
-        setConnectionError('WebSocket disconnected');
+        setConnectionError('Disconnected from character');
       },
       (error) => {
-        console.error('WebSocket error:', error);
-        setConnectionError('WebSocket error');
+        console.error('[CharacterChat] Error:', error);
+        setConnectionError(`Connection error: ${error?.message || 'Unknown error'}`);
       }
     );
 
     return () => {
       wsClientRef.current?.disconnect();
     };
-  }, [character.id]);
+  }, [character?.id]);
 
   // Effect to trigger reconnect on reconnectAttempts change
   useEffect(() => {
@@ -222,12 +228,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     e.preventDefault();
     if (!inputMessage.trim() || !wsClientRef.current) return;
 
-    // Debug: Alert if not custom
-    if (!(character.is_custom === true || (typeof character.id === 'string' && character.id.startsWith('custom-')))) {
-      alert('This character is NOT detected as custom. Custom chat path will not be used.');
-    }
-
-    // The Go backend expects: { id, sender, content, timestamp }
+    // Create the message
     const message: Message = {
       id: Math.random().toString(36).substring(7),
       sender: 'user',
@@ -235,12 +236,22 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       timestamp: Date.now(),
     };
 
-    wsClientRef.current.sendMessage('chat', message);
+    // Check if connected first
+    if (!isConnected) {
+      setConnectionError('Not connected to character service. Please try refreshing the page.');
+      return;
+    }
+
+    // Add message to UI immediately
     setMessages(prev => [...prev, message]);
     setInputMessage('');
     setIsTyping(true);
     setShowQuickReplies(false);
 
+    // Then send to websocket/API
+    console.log('[CharacterChat] Sending message:', message.content);
+    wsClientRef.current.sendMessage('chat', message);
+    
     // Reset textarea height
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';

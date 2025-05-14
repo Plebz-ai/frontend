@@ -13,6 +13,11 @@ const WS_URLS = {
   ai: process.env.NEXT_PUBLIC_WS_AI_URL || 'ws://localhost:5000/ws',
 };
 
+// API URLs for direct HTTP calls (use Next.js proxy route '/ai-layer')
+const API_URLS = {
+  ai: process.env.NEXT_PUBLIC_AI_LAYER_URL || '/ai-layer'
+};
+
 // Helper: Determine if a character is custom
 export function isCustomCharacter(character: any): boolean {
   return !!character && (character.is_custom === true || (typeof character.id === 'string' && character.id.startsWith('custom-')));
@@ -64,21 +69,39 @@ export function createWebSocketClient(
         body.audio_data = content.audio_data;
       }
       console.log('[AI-Layer2 DEBUG] Outgoing payload to orchestrator:', JSON.stringify(body, null, 2));
-      fetch('http://localhost:8010/interact', {
+      
+      // Use Next.js proxy for AI Layer2: '/ai-layer/interact' => orchestrator
+      const apiUrl = `${API_URLS.ai.replace(/\/$/, '')}/interact`;
+      console.log('[AI-Layer2 DEBUG] Using API URL:', apiUrl);
+      
+      fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
         .then(res => {
-          if (!res.ok) throw new Error('Failed to fetch');
+          console.log(`[AI-Layer2 DEBUG] Response status: ${res.status}`);
+          if (!res.ok) {
+            throw new Error(`Failed to fetch: ${res.status} ${res.statusText}`);
+          }
           return res.json();
         })
         .then(data => {
-          onMessage({ type: 'text_response', content: data.response });
+          console.log('[AI-Layer2 DEBUG] Response from orchestrator:', data);
+          onMessage({ 
+            type: 'text_response', 
+            content: data.response,
+            error: data.error
+          });
         })
         .catch(err => {
+          console.error('[AI-Layer2 ERROR]', err);
+          onMessage({
+            type: 'text_response',
+            content: `Connection error: ${err.message}. Please try again.`,
+            error: { connection: err.message }
+          });
           if (onError) onError(err);
-          onDisconnect();
         });
     }
     function connect() { connected = true; onConnect(); }
