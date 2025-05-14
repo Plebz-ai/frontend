@@ -15,7 +15,7 @@ const WS_URLS = {
 
 // Helper: Determine if a character is custom
 export function isCustomCharacter(character: any): boolean {
-  return character && (character.is_custom || character.id?.toString().startsWith('custom-'));
+  return !!character && (character.is_custom === true || (typeof character.id === 'string' && character.id.startsWith('custom-')));
 }
 
 // Helper: Build the correct WebSocket URL for a given character and client
@@ -49,6 +49,43 @@ export function createWebSocketClient(
   onError?: ErrorHandler
 ) {
   const isCustom = isCustomCharacter(character);
+  if (isCustom) {
+    // Patch: Use HTTP POST to orchestrator instead of WebSocket
+    let connected = false;
+    function sendMessage(type: string, content: any) {
+      if (!connected) return;
+      // For chat, content is the message object
+      const body: any = {
+        user_input: content.content,
+        character_details: character,
+        mode: 'chat',
+      };
+      if (content.audio_data) {
+        body.audio_data = content.audio_data;
+      }
+      console.log('[AI-Layer2 DEBUG] Outgoing payload to orchestrator:', JSON.stringify(body, null, 2));
+      fetch('http://localhost:8010/interact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch');
+          return res.json();
+        })
+        .then(data => {
+          onMessage({ type: 'text_response', content: data.response });
+        })
+        .catch(err => {
+          if (onError) onError(err);
+          onDisconnect();
+        });
+    }
+    function connect() { connected = true; onConnect(); }
+    function disconnect() { connected = false; onDisconnect(); }
+    setTimeout(connect, 0);
+    return { sendMessage, disconnect };
+  }
   const url = getWebSocketUrlForCharacter(character, clientId, sessionId);
   let ws: WebSocket | null = null;
   let connected = false;

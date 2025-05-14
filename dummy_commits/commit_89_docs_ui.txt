@@ -1,3 +1,0 @@
-Commit #89: docs(ui): update documentation
-Date: 2025-04-23
-Description: Changes made for the ui component as part of the AI Character Platform project.

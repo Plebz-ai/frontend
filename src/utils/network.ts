@@ -15,7 +15,8 @@ export const isOnline = (): boolean => {
 };
 
 // Function to check if the API server is reachable
-export const checkApiServerHealth = async (url: string): Promise<NetworkCheckResult> => {
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+export const checkApiServerHealth = async (url: string = API_BASE_URL): Promise<NetworkCheckResult> => {
   const result: NetworkCheckResult = {
     online: isOnline(),
     serverReachable: false,

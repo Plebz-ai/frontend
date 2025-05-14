@@ -126,9 +126,9 @@ const TextAreaField: React.FC<TextAreaFieldProps> = ({
 };
 
 const VOICE_TYPES = [
-  { value: 'natural', label: 'Natural', description: 'Human-like voice with natural intonation' },
-  { value: 'robotic', label: 'Robotic', description: 'Mechanical, AI-like voice' },
-  { value: 'animated', label: 'Animated', description: 'Expressive, cartoon-like voice' }
+  { value: 'male', label: 'Male', description: 'Human-like voice with male intonation' },
+  { value: 'female', label: 'Female', description: 'Human-like voice with female intonation' },
+  { value: 'predefined', label: 'Predefined', description: 'Predefined voice' }
 ]
 
 const GENDER_OPTIONS = [

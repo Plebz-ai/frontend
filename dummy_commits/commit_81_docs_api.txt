@@ -1,3 +1,0 @@
-Commit #81: docs(api): update documentation
-Date: 2025-04-15
-Description: Changes made for the api component as part of the AI Character Platform project.

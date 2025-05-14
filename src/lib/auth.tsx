@@ -28,7 +28,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 // API URL - now using proxied endpoint
-const API_BASE_URL = '/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 // Debug URL - log actual URL being used
 console.log('Auth API URL:', API_BASE_URL);

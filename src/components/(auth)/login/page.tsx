@@ -53,7 +53,7 @@ export default function LoginPage() {
     const checkServerHealth = async () => {
       try {
         // Use proxied API URL
-        const apiBaseUrl = '/api';
+        const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
         setNetworkStatus(prev => ({ ...prev, checking: true }));
         
         const healthResult = await checkApiServerHealth(apiBaseUrl);

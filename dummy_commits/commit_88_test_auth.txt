@@ -1,3 +1,0 @@
-Commit #88: test(auth): add unit tests
-Date: 2025-04-22
-Description: Changes made for the auth component as part of the AI Character Platform project.
