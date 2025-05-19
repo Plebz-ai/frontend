@@ -61,12 +61,27 @@ export function createWebSocketClient(
       if (!connected) return;
       // For chat, content is the message object
       const body: any = {
-        user_input: content.content,
-        character_details: character,
-        mode: 'chat',
+        user_input: typeof content.content === 'string' ? content.content : '',
+        character_details: typeof character === 'object' && character !== null ? character : {},
+        mode: content.mode || (content.audio_data ? 'voice' : 'chat'),
+        audio_data: typeof content.audio_data === 'string' ? content.audio_data : (content.audio_data ? String(content.audio_data) : ''),
       };
-      if (content.audio_data) {
-        body.audio_data = content.audio_data;
+      // Validation
+      if (typeof body.user_input !== 'string') {
+        console.warn('[AI-Layer2] user_input is not a string, defaulting to empty string.');
+        body.user_input = '';
+      }
+      if (typeof body.character_details !== 'object' || body.character_details === null) {
+        console.warn('[AI-Layer2] character_details is not an object, defaulting to empty object.');
+        body.character_details = {};
+      }
+      if (typeof body.mode !== 'string') {
+        console.warn('[AI-Layer2] mode is not a string, defaulting to "chat".');
+        body.mode = 'chat';
+      }
+      if (typeof body.audio_data !== 'string') {
+        console.warn('[AI-Layer2] audio_data is not a string, defaulting to empty string.');
+        body.audio_data = '';
       }
       console.log('[AI-Layer2 DEBUG] Outgoing payload to orchestrator:', JSON.stringify(body, null, 2));
       

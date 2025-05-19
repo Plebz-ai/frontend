@@ -19,11 +19,12 @@ interface Message {
 interface VideoCallProps {
   character: Character
   onClose: () => void
-  sessionId?: string // Optional sessionId to maintain the same chat session
-  initialMessages?: Message[] // Optional initial messages from CharacterChat
+  sessionId: string
+  initialMessages?: Message[]
+  videoDisabled?: boolean
 }
 
-export default function VideoCall({ character, onClose, sessionId, initialMessages = [] }: VideoCallProps) {
+export default function VideoCall({ character, onClose, sessionId, initialMessages = [], videoDisabled = false }: VideoCallProps) {
   const [callState, setCallState] = useState<CallState>('idle')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
@@ -46,7 +47,25 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
-  const { startRecording, stopRecording, isRecordingSupported } = useSpeechRecognition()
+  const { startRecording, stopRecording, isRecordingSupported, startStreamingRecognition } = useSpeechRecognition()
+  
+  const [liveTranscript, setLiveTranscript] = useState('')
+  const [isStreamingSTT, setIsStreamingSTT] = useState(false)
+  const streamingStopRef = useRef<null | (() => void)>(null)
+  
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false)
+  
+  const [debouncedTranscript, setDebouncedTranscript] = useState('')
+  const [isWaitingToSend, setIsWaitingToSend] = useState(false)
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  const [sttError, setSttError] = useState<string | null>(null)
+  const [ttsError, setTtsError] = useState<string | null>(null)
+  
+  const [ttsBuffering, setTtsBuffering] = useState(false)
+  const ttsQueueRef = useRef<string[]>([])
+  const ttsPlayingRef = useRef(false)
   
   // Auto-start video call when component mounts
   useEffect(() => {
@@ -162,6 +181,158 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     }
   }, [character.id, sessionId, initialMessages.length])
 
+  // Start streaming STT when call is connected
+  useEffect(() => {
+    if (callState === 'connected' && isRecordingSupported && !isStreamingSTT) {
+      setIsStreamingSTT(true)
+      setSttError(null)
+      streamingStopRef.current = startStreamingRecognition((transcript) => {
+        setLiveTranscript(transcript)
+      })
+      // Patch: catch errors from streaming
+      if (typeof streamingStopRef.current === 'function') {
+        // No error
+      } else if (streamingStopRef.current && streamingStopRef.current.error) {
+        setSttError('Microphone or streaming error. Please check permissions and try again.')
+        setIsStreamingSTT(false)
+      }
+    }
+    return () => {
+      if (streamingStopRef.current) streamingStopRef.current()
+      setIsStreamingSTT(false)
+      setLiveTranscript('')
+    }
+  }, [callState, isRecordingSupported, startStreamingRecognition])
+
+  // Streaming TTS playback for character responses (buffered)
+  useEffect(() => {
+    if (messages.length === 0) return
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg.sender !== 'character' || !lastMsg.content) return
+    let abort = false
+    setIsTTSPlaying(true)
+    setTtsError(null)
+    setTtsBuffering(true)
+    ttsQueueRef.current = []
+    ttsPlayingRef.current = false
+    // Stop any current audio before starting new
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current = null
+    }
+    const playBufferedChunks = async () => {
+      // Wait for enough chunks or a timeout
+      let bufferTimeout: NodeJS.Timeout | null = null
+      let chunks: Uint8Array[] = []
+      let playing = false
+      const playBuffer = (buffer: Uint8Array[]) => {
+        if (buffer.length === 0) return
+        const totalLength = buffer.reduce((acc, arr) => acc + arr.length, 0)
+        const merged = new Uint8Array(totalLength)
+        let offset = 0
+        for (const arr of buffer) {
+          merged.set(arr, offset)
+          offset += arr.length
+        }
+        const blob = new Blob([merged], { type: 'audio/webm' })
+        const url = URL.createObjectURL(blob)
+        if (!audioRef.current) {
+          audioRef.current = new Audio()
+          audioRef.current.onended = () => setIsTTSPlaying(false)
+        }
+        audioRef.current.src = url
+        audioRef.current.play().catch(() => setTtsError('Audio playback failed.'))
+        audioRef.current.onended = () => {
+          URL.revokeObjectURL(url)
+          setIsTTSPlaying(false)
+        }
+      }
+      // Buffering loop
+      while (!abort) {
+        if (ttsQueueRef.current.length > 0) {
+          // Decode and buffer all available chunks
+          while (ttsQueueRef.current.length > 0) {
+            const base64 = ttsQueueRef.current.shift()!
+            const binary = atob(base64)
+            const bytes = new Uint8Array(binary.length)
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+            chunks.push(bytes)
+          }
+          // If enough data or not already playing, play buffer
+          if (chunks.length > 0 && !playing) {
+            playing = true
+            setTtsBuffering(false)
+            playBuffer(chunks)
+            chunks = []
+          }
+        }
+        await new Promise(res => setTimeout(res, 60))
+      }
+    }
+    const fetchAndBuffer = async () => {
+      try {
+        const resp = await fetch('/ai-layer/stream-text-to-speech', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: lastMsg.content, voice_type: character.voice_type || 'predefined' })
+        })
+        if (!resp.body) throw new Error('No response body from TTS stream')
+        const reader = resp.body.getReader()
+        let partial = ''
+        while (!abort) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const text = new TextDecoder().decode(value)
+          partial += text
+          if (partial.length > 0) {
+            ttsQueueRef.current.push(partial)
+            partial = ''
+          }
+        }
+      } catch (err) {
+        setIsTTSPlaying(false)
+        setTtsError('TTS streaming failed. Please try again.')
+      }
+    }
+    playBufferedChunks()
+    fetchAndBuffer()
+    return () => { abort = true; setIsTTSPlaying(false); setTtsBuffering(false) }
+  }, [messages, character.voice_type])
+
+  // Debounce transcript sending
+  useEffect(() => {
+    if (!liveTranscript) return
+    setIsWaitingToSend(true)
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)
+    // If transcript ends with sentence-ending punctuation, send immediately
+    if (/[.!?]\s*$/.test(liveTranscript)) {
+      setDebouncedTranscript(liveTranscript)
+      setIsWaitingToSend(false)
+      return
+    }
+    debounceTimeoutRef.current = setTimeout(() => {
+      setDebouncedTranscript(liveTranscript)
+      setIsWaitingToSend(false)
+    }, 600)
+    return () => {
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)
+    }
+  }, [liveTranscript])
+
+  // Send debounced transcript to LLM/character
+  useEffect(() => {
+    if (debouncedTranscript.trim().length > 0 && wsClientRef.current) {
+      wsClientRef.current.sendMessage('chat', {
+        content: debouncedTranscript.trim(),
+        mode: 'voice',
+        audio_data: '',
+      })
+      setDebouncedTranscript('')
+      setLiveTranscript('')
+    }
+  }, [debouncedTranscript])
+
   const cleanup = () => {
     if (wsClientRef.current) {
       wsClientRef.current.disconnect()
@@ -223,11 +394,9 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       const videoElement = document.getElementById('localVideoElement') as HTMLVideoElement
       console.log('Local video element found:', !!videoElement)
       
-      // Request camera and microphone with specific constraints
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      })
+      // Only request audio if videoDisabled is true
+      const constraints = videoDisabled ? { audio: true, video: false } : { audio: true, video: true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       console.log('Camera access granted, setting up stream')
       
@@ -260,18 +429,15 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       
       // Send a message to start streaming
       if (wsClientRef.current) {
-        wsClientRef.current.sendMessage('start_stream', { 
+        wsClientRef.current.sendMessage('start_stream', {
           character_id: character.id,
-          video_enabled: true,
+          video_enabled: !videoDisabled,
           audio_enabled: true
         })
       }
       
-      // For testing, start dummy video immediately
-      setUsingDummyVideo(true)
-      
       // Ensure video element loads the demo video if in dummy mode
-      if (videoRef.current) {
+      if (!videoDisabled && videoRef.current) {
         const dummyVideoElement = document.querySelector('video[src="/videos/video.mp4"]') as HTMLVideoElement;
         if (dummyVideoElement) {
           dummyVideoElement.volume = 0.7; // Set volume to 70%
@@ -427,6 +593,20 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  // Retry STT handler
+  const handleRetrySTT = () => {
+    setSttError(null)
+    setIsStreamingSTT(false)
+    setTimeout(() => setIsStreamingSTT(true), 100)
+  }
+
+  // In the VideoCall component, set usingDummyVideo to false if videoDisabled is true
+  useEffect(() => {
+    if (videoDisabled) {
+      setUsingDummyVideo(false);
+    }
+  }, [videoDisabled]);
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
       <div className="bg-gray-900 rounded-xl w-full max-w-4xl p-4 h-[90vh] flex flex-col">
@@ -483,7 +663,7 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
             ) : (
               <>
                 {/* Replace video with direct HTML when using dummy video */}
-                {usingDummyVideo ? (
+                {!videoDisabled && usingDummyVideo ? (
                   <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
                     <div className="absolute top-3 left-3 bg-red-600 text-white px-3 py-1 rounded-md text-sm font-bold shadow-lg z-10">
                       DEMO MODE
@@ -508,24 +688,26 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
             )}
             
             {/* Local video preview - Always render the container, but conditionally apply CSS */}
-            <div className={`absolute bottom-4 right-4 w-48 h-36 bg-black rounded-lg overflow-hidden border-2 border-indigo-500 shadow-lg z-50 ${isStreaming ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
-              <video
-                id="localVideoElement"
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover transform scale-x-[-1]"
-              ></video>
-              {isVideoOff && (
-                <div className="absolute inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center">
-                  <FaVideoSlash className="w-8 h-8 text-white opacity-60" />
+            {!videoDisabled && (
+              <div className={`absolute bottom-4 right-4 w-48 h-36 bg-black rounded-lg overflow-hidden border-2 border-indigo-500 shadow-lg z-50 ${isStreaming ? 'opacity-100' : 'opacity-0'} transition-opacity duration-300`}>
+                <video
+                  id="localVideoElement"
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover transform scale-x-[-1]"
+                ></video>
+                {isVideoOff && (
+                  <div className="absolute inset-0 bg-gray-900 bg-opacity-80 flex items-center justify-center">
+                    <FaVideoSlash className="w-8 h-8 text-white opacity-60" />
+                  </div>
+                )}
+                <div className="absolute top-0 left-0 w-full bg-black bg-opacity-50 px-2 py-1 text-sm text-white">
+                  You 
                 </div>
-              )}
-              <div className="absolute top-0 left-0 w-full bg-black bg-opacity-50 px-2 py-1 text-sm text-white">
-                You 
               </div>
-            </div>
+            )}
             
             {/* Call controls */}
             {callState === 'connected' && (
@@ -675,6 +857,32 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
           )}
         </div>
       </div>
+      {isStreamingSTT && (
+        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-white bg-opacity-80 px-4 py-2 rounded shadow text-black z-50">
+          <span className="font-mono text-sm">{liveTranscript || 'Listening...'}{isWaitingToSend && <span className="ml-2 animate-pulse text-indigo-600">...</span>}</span>
+        </div>
+      )}
+      {isTTSPlaying && (
+        <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded shadow z-50 animate-pulse">
+          <span className="font-mono text-sm">Speaking...</span>
+        </div>
+      )}
+      {ttsBuffering && (
+        <div className="fixed bottom-44 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black px-4 py-2 rounded shadow z-50 animate-pulse">
+          <span className="font-mono text-sm">Buffering audio...</span>
+        </div>
+      )}
+      {sttError && (
+        <div className="fixed bottom-52 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded shadow z-50">
+          <span className="font-mono text-sm">{sttError}</span>
+          <button onClick={handleRetrySTT} className="ml-4 px-3 py-1 bg-white text-red-600 rounded font-bold">Retry</button>
+        </div>
+      )}
+      {ttsError && (
+        <div className="fixed bottom-60 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded shadow z-50">
+          <span className="font-mono text-sm">{ttsError}</span>
+        </div>
+      )}
     </div>
   )
 } 

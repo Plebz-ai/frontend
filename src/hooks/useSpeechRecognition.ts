@@ -108,9 +108,102 @@ export function useSpeechRecognition() {
     }
   }, [])
   
+  // Streaming speech-to-text (real-time)
+  const startStreamingRecognition = useCallback(async (onTranscript: (transcript: string) => void) => {
+    if (!isRecordingSupported) {
+      console.error('Streaming STT is not supported in this browser')
+      return null
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      })
+      let controller: AbortController | null = new AbortController()
+      // Create a ReadableStream to send audio chunks
+      const audioStream = new ReadableStream({
+        start(controller) {},
+        pull(controller) {},
+        cancel() {}
+      })
+      // Patch: We'll push chunks to this array and pipe to the stream
+      let audioQueue: Blob[] = []
+      let streamController: ReadableStreamDefaultController<any> | null = null
+      const streamForFetch = new ReadableStream({
+        start(ctrl) { streamController = ctrl },
+        pull() {
+          if (audioQueue.length > 0 && streamController) {
+            const chunk = audioQueue.shift()
+            chunk?.arrayBuffer().then(buf => {
+              streamController?.enqueue(new Uint8Array(buf))
+            })
+          }
+        },
+        cancel() { streamController = null }
+      })
+      // Handle dataavailable
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioQueue.push(event.data)
+          if (streamController) {
+            const chunk = audioQueue.shift()
+            chunk?.arrayBuffer().then(buf => {
+              streamController?.enqueue(new Uint8Array(buf))
+            })
+          }
+        }
+      }
+      // Start recording in small chunks
+      mediaRecorder.start(250) // 250ms chunks
+      mediaRecorderRef.current = mediaRecorder
+      // Stream to orchestrator
+      const response = await fetch('/ai-layer/stream-speech-to-text', {
+        method: 'POST',
+        body: streamForFetch,
+        headers: { 'Content-Type': 'application/octet-stream' },
+        signal: controller.signal,
+        duplex: 'half'
+      })
+      if (!response.body) {
+        throw new Error('No response body from orchestrator STT stream')
+      }
+      const reader = response.body.getReader()
+      let partial = ''
+      // Read streamed transcripts
+      function read() {
+        reader.read().then(({ done, value }) => {
+          if (done) return
+          const text = new TextDecoder().decode(value)
+          partial += text
+          // Call callback with new transcript
+          onTranscript(partial)
+          read()
+        })
+      }
+      read()
+      // Return a stop function
+      return () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop()
+          mediaRecorderRef.current = null
+        }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop())
+          streamRef.current = null
+        }
+        if (controller) controller.abort()
+      }
+    } catch (err) {
+      console.error('Error in streaming STT:', err)
+      return null
+    }
+  }, [isRecordingSupported])
+  
   return {
     isRecordingSupported,
     startRecording,
-    stopRecording
+    stopRecording,
+    startStreamingRecognition
   }
 } 

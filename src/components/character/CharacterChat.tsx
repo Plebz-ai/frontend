@@ -46,6 +46,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const [wasDisconnected, setWasDisconnected] = useState(false)
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const [reconnectBlocked, setReconnectBlocked] = useState(false)
+  const [showVoiceCall, setShowVoiceCall] = useState(false)
 
   const wsClientRef = useRef<ReturnType<typeof createWebSocketClient> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -374,7 +375,11 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   }
 
   const handleVoiceCallClick = () => {
-    alert('Voice call feature is not implemented yet.');
+    setShowVoiceCall(true);
+  };
+
+  const handleCloseVoiceCall = () => {
+    setShowVoiceCall(false);
   };
 
   return (
@@ -414,6 +419,16 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           onClose={handleCloseVideoCall}
           sessionId={sessionIdRef.current}
           initialMessages={messages}
+        />
+      )}
+      
+      {showVoiceCall && (
+        <VideoCall
+          character={character}
+          onClose={handleCloseVoiceCall}
+          sessionId={sessionIdRef.current}
+          initialMessages={messages}
+          videoDisabled={true}
         />
       )}
       
