@@ -13,7 +13,6 @@ interface CharacterDetailProps {
 }
 
 export default function CharacterDetail({ character }: CharacterDetailProps) {
-  const [isVideoCallActive, setIsVideoCallActive] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
   const [expandedSection, setExpandedSection] = useState<string | null>(null)
   const [imageError, setImageError] = useState(false)
@@ -43,15 +42,6 @@ export default function CharacterDetail({ character }: CharacterDetailProps) {
 
   return (
     <div className="h-screen flex flex-col">
-      {isVideoCallActive && (
-        <VideoCall 
-          character={character} 
-          onClose={() => setIsVideoCallActive(false)} 
-          sessionId={sessionId}
-          initialMessages={messages}
-        />
-      )}
-      
       <header className="bg-[#0e1016] border-b border-[#292d3e] py-3 px-4 z-10 shadow-md">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
@@ -85,15 +75,6 @@ export default function CharacterDetail({ character }: CharacterDetailProps) {
             >
               <FaInfoCircle className="h-5 w-5" />
             </button>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setIsVideoCallActive(true)}
-              className="inline-flex items-center px-4 py-2 rounded-lg shadow text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-[#070809] transition-all duration-200"
-            >
-              <FaVideo className="mr-2 h-4 w-4" />
-              Video Call
-            </motion.button>
             <button
               className="p-2 rounded-full text-gray-300 hover:text-white hover:bg-[#1a1c25] transition-colors"
             >

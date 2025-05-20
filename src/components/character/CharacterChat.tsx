@@ -37,9 +37,6 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const [isTyping, setIsTyping] = useState(false)
   const [audioMessages, setAudioMessages] = useState<{[key: string]: Uint8Array}>({})
   const [currentAudio, setCurrentAudio] = useState<string | null>(null)
-  const [isRecording, setIsRecording] = useState(false)
-  const [connectionError, setConnectionError] = useState<string | null>(null)
-  const [isVideoCallActive, setIsVideoCallActive] = useState(false)
   const [showQuickReplies, setShowQuickReplies] = useState(true)
   const [showVideo, setShowVideo] = useState(false)
   const [missedMessages, setMissedMessages] = useState<Message[]>([])
@@ -47,6 +44,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const [reconnectBlocked, setReconnectBlocked] = useState(false)
   const [showVoiceCall, setShowVoiceCall] = useState(false)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
 
   const wsClientRef = useRef<ReturnType<typeof createWebSocketClient> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -54,17 +52,10 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const videoCallRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  const sessionIdRef = useRef<string>('');
+  const clientIdRef = useRef<string>('');
 
-  // WebRTC setup
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
-
-  // Generate a persistent session ID and client ID per character
-  const sessionIdRef = useRef<string>('')
-  const clientIdRef = useRef<string>('')
-
-  const { startRecording, stopRecording, isRecordingSupported } = useSpeechRecognition();
+  const { startStreamingRecognition } = useSpeechRecognition();
 
   useEffect(() => {
     window.lastCharacter = character;
@@ -279,93 +270,6 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
   }
 
-  const handleStartRecording = async () => {
-    if (isRecording) return
-
-    setIsRecording(true)
-
-    try {
-      const audioData = await startRecording()
-      if (audioData && wsClientRef.current) {
-        // Convert Uint8Array to base64 string
-        const binary = Array.from(audioData).map(byte => String.fromCharCode(byte)).join('')
-        const base64String = btoa(binary)
-        wsClientRef.current.sendMessage('audio', { data: base64String })
-      }
-    } catch (error) {
-      console.error('Recording error:', error)
-      setConnectionError('Could not access microphone')
-    } finally {
-      setIsRecording(false)
-    }
-  }
-
-  const handleStopRecording = () => {
-    stopRecording()
-    setIsRecording(false)
-  }
-
-  const formatTimestamp = (timestamp: number) => {
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-
-  useEffect(() => {
-    // Initialize WebRTC
-    const initWebRTC = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setLocalStream(stream);
-        if (videoCallRef.current) {
-          const videoElement = videoCallRef.current;
-          videoElement.srcObject = stream;
-        }
-
-        const peerConnection = new RTCPeerConnection();
-        peerConnectionRef.current = peerConnection;
-
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-
-        peerConnection.ontrack = (event) => {
-          setRemoteStream(event.streams[0]);
-        };
-
-        // Signaling logic here
-        // Example: wsClientRef.current.sendMessage('offer', offer);
-
-      } catch (error) {
-        console.error('Error accessing media devices.', error);
-      }
-    };
-
-    if (isVideoCallActive) {
-      initWebRTC();
-    }
-
-    return () => {
-      // Cleanup
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [isVideoCallActive]);
-
-  useEffect(() => {
-    if (videoCallRef.current && localStream) {
-      const videoElement = videoCallRef.current;
-      videoElement.srcObject = localStream;
-    }
-  }, [localStream]);
-
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
-  }, [remoteStream]);
-
   const handleVideoCallClick = () => {
     setShowVideo(true)
   }
@@ -381,6 +285,12 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const handleCloseVoiceCall = () => {
     setShowVoiceCall(false);
   };
+
+  // Add formatTimestamp helper
+  const formatTimestamp = (timestamp: number) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
 
   return (
     <div className="flex flex-col h-full relative bg-[#0e0f13]">
@@ -626,36 +536,18 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             </button>
           </div>
           
-          <div className="flex space-x-2">
-            {isRecordingSupported && (
-              <button
-                type="button"
-                onClick={isRecording ? handleStopRecording : handleStartRecording}
-                disabled={!isConnected}
-                className={`p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-300 transition-all duration-200 ${
-                  isRecording 
-                    ? 'bg-red-600 text-white hover:bg-red-500' 
-                    : 'bg-[#202536] text-gray-300 hover:bg-[#2a2f45] border border-[#343a4f]'
-                }`}
-                aria-label={isRecording ? "Stop recording" : "Start recording"}
-              >
-                {isRecording ? <FaMicrophoneSlash className="w-5 h-5" /> : <FaMicrophone className="w-5 h-5" />}
-              </button>
+          <button
+            type="submit"
+            disabled={!isConnected || !inputMessage.trim()}
+            className="p-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow"
+            aria-label="Send message"
+          >
+            {isTyping ? (
+              <FaSpinner className="w-5 h-5 animate-spin" />
+            ) : (
+              <FaPaperPlane className="w-5 h-5" />
             )}
-            
-            <button
-              type="submit"
-              disabled={!isConnected || !inputMessage.trim()}
-              className="p-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow"
-              aria-label="Send message"
-            >
-              {isTyping ? (
-                <FaSpinner className="w-5 h-5 animate-spin" />
-              ) : (
-                <FaPaperPlane className="w-5 h-5" />
-              )}
-            </button>
-          </div>
+          </button>
         </form>
       </div>
 

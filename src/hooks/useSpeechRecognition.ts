@@ -1,133 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 
 export function useSpeechRecognition() {
-  const [isRecordingSupported, setIsRecordingSupported] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
-  
-  useEffect(() => {
-    // Check if the browser supports MediaRecorder and getUserMedia
-    const isSupported = 
-      typeof window !== 'undefined' && 
-      navigator.mediaDevices && 
-      typeof navigator.mediaDevices.getUserMedia === 'function' && 
-      window.MediaRecorder;
-      
-    setIsRecordingSupported(!!isSupported)
-    
-    // Cleanup function
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-        streamRef.current = null
-      }
-    }
-  }, [])
-  
-  const startRecording = useCallback(async (): Promise<Uint8Array | null> => {
-    console.log("startRecording called - support status:", isRecordingSupported);
-    if (!isRecordingSupported) {
-      console.error('Recording is not supported in this browser')
-      return null
-    }
-    
+
+  // Helper to check if browser supports streaming POST with ReadableStream and duplex: 'half'
+  export function supportsStreamingPost() {
     try {
-      // Reset chunks array
-      chunksRef.current = []
-      console.log("Chunks array reset");
-      
-      // Get access to the microphone
-      console.log("Requesting microphone access");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      console.log("Microphone access granted");
-      
-      // Create a new MediaRecorder instance
-      console.log("Creating MediaRecorder");
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
-      })
-      console.log("MediaRecorder created with MIME type:", mediaRecorder.mimeType);
-      
-      // Set up data handler
-      mediaRecorder.ondataavailable = (event) => {
-        console.log("MediaRecorder data available, size:", event.data.size);
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data)
-        }
-      }
-      
-      // Start recording
-      console.log("Starting MediaRecorder");
-      mediaRecorder.start()
-      mediaRecorderRef.current = mediaRecorder
-      console.log("MediaRecorder started, state:", mediaRecorder.state);
-      
-      // Create a promise that resolves when recording stops
-      return new Promise((resolve) => {
-        console.log("Waiting for recording to stop...");
-        mediaRecorder.onstop = async () => {
-          console.log("MediaRecorder stopped. Chunks collected:", chunksRef.current.length);
-          // Create a blob from the chunks
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-          console.log("Blob created, size:", blob.size);
-          
-          // Convert blob to array buffer
-          console.log("Converting blob to ArrayBuffer");
-          const arrayBuffer = await blob.arrayBuffer()
-          console.log("ArrayBuffer created, size:", arrayBuffer.byteLength);
-          
-          // Convert to Uint8Array
-          const audioData = new Uint8Array(arrayBuffer)
-          console.log("Uint8Array created, length:", audioData.length);
-          
-          // Clean up
-          if (streamRef.current) {
-            console.log("Stopping audio tracks");
-            streamRef.current.getTracks().forEach(track => track.stop())
-            streamRef.current = null
-          }
-          
-          console.log("Resolving promise with audio data");
-          resolve(audioData)
-        }
-      })
-    } catch (error) {
-      console.error('Error starting recording:', error)
-      return null
+      new Request('http://localhost', { method: 'POST', body: new ReadableStream(), duplex: 'half' });
+      return true;
+    } catch (e) {
+      return false;
     }
-  }, [isRecordingSupported])
-  
-  const stopRecording = useCallback(() => {
-    console.log("stopRecording called, mediaRecorder state:", mediaRecorderRef.current?.state || "NO_RECORDER");
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      console.log("Stopping MediaRecorder");
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current = null
-    }
-  }, [])
-  
+  }
+
   // Streaming speech-to-text (real-time)
   const startStreamingRecognition = useCallback(async (onTranscript: (transcript: string) => void) => {
-    if (!isRecordingSupported) {
-      console.error('Streaming STT is not supported in this browser')
-      return null
+    if (!supportsStreamingPost()) {
+      alert('Your browser does not support low-latency streaming voice recognition (streaming POST). Please use the latest Chrome or Edge, or use the Voice Call/WebSocket option.');
+      return () => {};
+    }
+    // Robust browser support check
+    if (typeof window === 'undefined' ||
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      console.error('Microphone access is not supported in this browser.');
+      alert('Microphone access is not supported in this browser. Please use a modern browser like Chrome, Edge, or Firefox.');
+      return () => {};
     }
     try {
+      console.log('[STT] Requesting microphone permission...');
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      console.log('[STT] Microphone permission granted. Stream started:', stream);
       streamRef.current = stream
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm;codecs=opus'
       })
       let controller: AbortController | null = new AbortController()
-      // Create a ReadableStream to send audio chunks
-      const audioStream = new ReadableStream({
-        start(controller) {},
-        pull(controller) {},
-        cancel() {}
-      })
-      // Patch: We'll push chunks to this array and pipe to the stream
       let audioQueue: Blob[] = []
       let streamController: ReadableStreamDefaultController<any> | null = null
       const streamForFetch = new ReadableStream({
@@ -136,74 +45,82 @@ export function useSpeechRecognition() {
           if (audioQueue.length > 0 && streamController) {
             const chunk = audioQueue.shift()
             chunk?.arrayBuffer().then(buf => {
+              console.log('[STT] Sending audio chunk to backend. Size:', buf.byteLength)
               streamController?.enqueue(new Uint8Array(buf))
             })
           }
         },
         cancel() { streamController = null }
       })
-      // Handle dataavailable
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioQueue.push(event.data)
+          console.log('[STT] Audio chunk available. Size:', event.data.size)
           if (streamController) {
             const chunk = audioQueue.shift()
             chunk?.arrayBuffer().then(buf => {
+              console.log('[STT] Sending audio chunk to backend (immediate). Size:', buf.byteLength)
               streamController?.enqueue(new Uint8Array(buf))
             })
           }
         }
       }
-      // Start recording in small chunks
+      mediaRecorder.onstart = () => console.log('[STT] MediaRecorder started.')
+      mediaRecorder.onstop = () => console.log('[STT] MediaRecorder stopped.')
+      mediaRecorder.onerror = (e) => console.error('[STT] MediaRecorder error:', e)
       mediaRecorder.start(250) // 250ms chunks
       mediaRecorderRef.current = mediaRecorder
-      // Stream to orchestrator
-      const response = await fetch('/ai-layer/stream-speech-to-text', {
+      console.log('[STT] Fetch POST to orchestrator /stream-speech-to-text at http://localhost:8010/stream-speech-to-text')
+      const response = await fetch('http://localhost:8010/stream-speech-to-text', {
         method: 'POST',
         body: streamForFetch,
         headers: { 'Content-Type': 'application/octet-stream' },
         signal: controller.signal,
         duplex: 'half'
       })
+      console.log('[STT] Fetch POST started. Awaiting response...')
       if (!response.body) {
         throw new Error('No response body from orchestrator STT stream')
       }
       const reader = response.body.getReader()
       let partial = ''
-      // Read streamed transcripts
       function read() {
         reader.read().then(({ done, value }) => {
-          if (done) return
+          if (done) {
+            console.log('[STT] Streaming STT response ended.')
+            return
+          }
           const text = new TextDecoder().decode(value)
           partial += text
-          // Call callback with new transcript
           onTranscript(partial)
           read()
         })
       }
       read()
-      // Return a stop function
       return () => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
           mediaRecorderRef.current.stop()
           mediaRecorderRef.current = null
+          console.log('[STT] MediaRecorder stopped (cleanup).')
         }
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop())
           streamRef.current = null
+          console.log('[STT] Microphone stream stopped (cleanup).')
         }
-        if (controller) controller.abort()
+        if (controller) {
+          controller.abort()
+          console.log('[STT] Fetch POST aborted (cleanup).')
+        }
       }
     } catch (err) {
-      console.error('Error in streaming STT:', err)
-      return null
+      console.error('[STT] Error in streaming STT:', err)
+      alert('Could not access microphone. Please check your browser settings and permissions.');
+      return () => {};
     }
-  }, [isRecordingSupported])
-  
+  }, [])
+
   return {
-    isRecordingSupported,
-    startRecording,
-    stopRecording,
     startStreamingRecognition
   }
 } 

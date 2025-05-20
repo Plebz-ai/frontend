@@ -4,8 +4,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createWebSocketClient, getWebSocketUrlForCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
-import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle } from 'react-icons/fa'
+import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle, FaVolumeUp } from 'react-icons/fa'
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
+import { useVoiceWebSocket } from '../../hooks/useVoiceWebSocket'
 
 type CallState = 'idle' | 'connecting' | 'connected' | 'error' | 'ended'
 
@@ -30,7 +31,6 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const [isMuted, setIsMuted] = useState(false)
   const [isVideoOff, setIsVideoOff] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isRecording, setIsRecording] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [usingDummyVideo, setUsingDummyVideo] = useState(true)
   
@@ -47,7 +47,7 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
-  const { startRecording, stopRecording, isRecordingSupported, startStreamingRecognition } = useSpeechRecognition()
+  const { startStreamingRecognition } = useSpeechRecognition()
   
   const [liveTranscript, setLiveTranscript] = useState('')
   const [isStreamingSTT, setIsStreamingSTT] = useState(false)
@@ -66,6 +66,16 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const [ttsBuffering, setTtsBuffering] = useState(false)
   const ttsQueueRef = useRef<string[]>([])
   const ttsPlayingRef = useRef(false)
+  
+  const [useWebSocketSTT, setUseWebSocketSTT] = useState(false)
+  const [wsTranscript, setWsTranscript] = useState('')
+  const [wsError, setWsError] = useState<string | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
+  
+  const [transcript, setTranscript] = useState('')
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null)
+  const [audioBufferQueue, setAudioBufferQueue] = useState<Uint8Array[]>([])
   
   // Auto-start video call when component mounts
   useEffect(() => {
@@ -181,28 +191,45 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     }
   }, [character.id, sessionId, initialMessages.length])
 
-  // Start streaming STT when call is connected
+  // Decide which pipeline to use (only once)
   useEffect(() => {
-    if (callState === 'connected' && isRecordingSupported && !isStreamingSTT) {
-      setIsStreamingSTT(true)
-      setSttError(null)
-      streamingStopRef.current = startStreamingRecognition((transcript) => {
-        setLiveTranscript(transcript)
-      })
-      // Patch: catch errors from streaming
-      if (typeof streamingStopRef.current === 'function') {
-        // No error
-      } else if (streamingStopRef.current && streamingStopRef.current.error) {
-        setSttError('Microphone or streaming error. Please check permissions and try again.')
-        setIsStreamingSTT(false)
+    const supportsStreamingPost = () => {
+      try {
+        new Request('http://localhost', { method: 'POST', body: new ReadableStream(), duplex: 'half' });
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+    setUseWebSocketSTT(!supportsStreamingPost());
+  }, []);
+
+  // Start the correct voice pipeline when call is connected
+  useEffect(() => {
+    let cleanupFn: (() => void) | undefined;
+    if (callState === 'connected') {
+      if (!useWebSocketSTT) {
+        setIsStreamingSTT(true);
+        setSttError(null);
+        streamingStopRef.current = startStreamingRecognition((transcript) => {
+          setLiveTranscript(transcript);
+        });
+        cleanupFn = () => {
+          if (typeof streamingStopRef.current === 'function') streamingStopRef.current();
+          setIsStreamingSTT(false);
+          setLiveTranscript('');
+        };
+      } else {
+        wsVoice.start();
+        setWsConnected(true);
+        cleanupFn = () => {
+          wsVoice.stop();
+          setWsConnected(false);
+        };
       }
     }
-    return () => {
-      if (streamingStopRef.current) streamingStopRef.current()
-      setIsStreamingSTT(false)
-      setLiveTranscript('')
-    }
-  }, [callState, isRecordingSupported, startStreamingRecognition])
+    return cleanupFn;
+  }, [callState, useWebSocketSTT]);
 
   // Streaming TTS playback for character responses (buffered)
   useEffect(() => {
@@ -548,46 +575,6 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     }
   }
 
-  const handleStartRecording = async () => {
-    console.log("Recording started");
-    if (isRecording) return
-    
-    setIsRecording(true)
-    
-    try {
-      console.log("Awaiting startRecording()");
-      const audioData = await startRecording()
-      console.log("Audio data received:", audioData ? `Yes, length: ${audioData.length}` : "No");
-      
-      if (audioData && wsClientRef.current) {
-        console.log("WebSocket client available:", !!wsClientRef.current);
-        
-        // Convert Uint8Array to base64 string
-        console.log("Converting to base64");
-        const binary = Array.from(audioData).map(byte => String.fromCharCode(byte)).join('')
-        const base64String = btoa(binary)
-        console.log("Base64 string created, length:", base64String.length);
-        
-        console.log("Sending via WebSocket");
-        const success = wsClientRef.current.sendMessage('audio', { data: base64String })
-        console.log("WebSocket send result:", success ? "Success" : "Failed");
-      } else {
-        console.log("No audio data or WebSocket client is null. Audio data:", !!audioData, "WebSocket:", !!wsClientRef.current);
-      }
-    } catch (error) {
-      console.error('Recording error:', error)
-      setError('Could not access microphone')
-    } finally {
-      setIsRecording(false)
-      console.log("Recording ended");
-    }
-  }
-
-  const handleStopRecording = () => {
-    stopRecording()
-    setIsRecording(false)
-  }
-
   const formatTimestamp = (timestamp: number) => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -606,6 +593,51 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       setUsingDummyVideo(false);
     }
   }, [videoDisabled]);
+
+  // Always initialize streamingStopRef to a no-op function to prevent TypeError
+  useEffect(() => {
+    streamingStopRef.current = () => {};
+  }, []);
+
+  useEffect(() => {
+    console.log('[UI] isStreamingSTT changed:', isStreamingSTT)
+  }, [isStreamingSTT])
+
+  // WebSocket STT pipeline
+  const wsVoice = useVoiceWebSocket({
+    characterDetails: character,
+    onTranscript: (t) => setTranscript(t),
+    onTTS: (chunk) => setAudioBufferQueue((q) => [...q, chunk]),
+    onError: (err) => setError(err),
+  })
+
+  // Play PCM audio as it streams in
+  useEffect(() => {
+    if (!audioCtx && audioBufferQueue.length > 0) {
+      setAudioCtx(new window.AudioContext({ sampleRate: 16000 }))
+    }
+    if (audioCtx && audioBufferQueue.length > 0) {
+      const chunk = audioBufferQueue[0]
+      setAudioBufferQueue((q) => q.slice(1))
+      // Convert PCM to AudioBuffer
+      const float32 = new Float32Array(chunk.length)
+      for (let i = 0; i < chunk.length; i++) {
+        float32[i] = chunk[i] / 32768.0
+      }
+      const buffer = audioCtx.createBuffer(1, float32.length, 16000)
+      buffer.copyToChannel(float32, 0)
+      const source = audioCtx.createBufferSource()
+      source.buffer = buffer
+      source.connect(audioCtx.destination)
+      source.onended = () => setIsSpeaking(false)
+      setIsSpeaking(true)
+      source.start()
+    }
+  }, [audioBufferQueue, audioCtx])
+
+  // Start/stop voice session
+  const handleStart = () => wsVoice.start()
+  const handleStop = () => wsVoice.stop()
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
@@ -706,31 +738,6 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
                 <div className="absolute top-0 left-0 w-full bg-black bg-opacity-50 px-2 py-1 text-sm text-white">
                   You 
                 </div>
-              </div>
-            )}
-            
-            {/* Call controls */}
-            {callState === 'connected' && (
-              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-4">
-                <button
-                  onMouseDown={handleStartRecording}
-                  onMouseUp={handleStopRecording}
-                  onTouchStart={handleStartRecording}
-                  onTouchEnd={handleStopRecording}
-                  className={`p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-white ${
-                    isRecording ? 'bg-red-600 animate-pulse' : 'bg-gray-800'
-                  } text-white`}
-                >
-                  <FaMicrophone className={`w-5 h-5 ${isRecording ? 'text-white' : 'text-green-400'}`} />
-                </button>
-                <button
-                  onClick={toggleVideo}
-                  className={`p-3 rounded-full focus:outline-none focus:ring-2 focus:ring-white ${
-                    isVideoOff ? 'bg-red-600' : 'bg-gray-800'
-                  } text-white`}
-                >
-                  {isVideoOff ? <FaVideoSlash className="w-5 h-5" /> : <FaVideo className="w-5 h-5" />}
-                </button>
               </div>
             )}
           </div>
@@ -857,32 +864,31 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
           )}
         </div>
       </div>
-      {isStreamingSTT && (
-        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-white bg-opacity-80 px-4 py-2 rounded shadow text-black z-50">
-          <span className="font-mono text-sm">{liveTranscript || 'Listening...'}{isWaitingToSend && <span className="ml-2 animate-pulse text-indigo-600">...</span>}</span>
+      {/* Listening/Mic indicator (top center, highly visible) */}
+      {wsVoice.isStreaming && (
+        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 flex flex-col items-center">
+          <div className="animate-pulse rounded-full bg-indigo-600 p-4 shadow-lg border-4 border-indigo-300 flex items-center justify-center">
+            <FaMicrophone className="text-white w-8 h-8 animate-bounce" />
+            <span className="ml-2 text-white font-bold text-lg">Listening...</span>
+          </div>
         </div>
       )}
-      {isTTSPlaying && (
-        <div className="fixed bottom-36 left-1/2 transform -translate-x-1/2 bg-indigo-600 text-white px-4 py-2 rounded shadow z-50 animate-pulse">
-          <span className="font-mono text-sm">Speaking...</span>
+      {isSpeaking && (
+        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 flex flex-col items-center">
+          <div className="rounded-full bg-green-600 p-4 shadow-lg border-4 border-green-300 flex items-center justify-center mt-2">
+            <FaVolumeUp className="text-white w-8 h-8 animate-pulse" />
+            <span className="ml-2 text-white font-bold text-lg">Speaking...</span>
+          </div>
         </div>
       )}
-      {ttsBuffering && (
-        <div className="fixed bottom-44 left-1/2 transform -translate-x-1/2 bg-yellow-400 text-black px-4 py-2 rounded shadow z-50 animate-pulse">
-          <span className="font-mono text-sm">Buffering audio...</span>
-        </div>
-      )}
-      {sttError && (
-        <div className="fixed bottom-52 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded shadow z-50">
-          <span className="font-mono text-sm">{sttError}</span>
-          <button onClick={handleRetrySTT} className="ml-4 px-3 py-1 bg-white text-red-600 rounded font-bold">Retry</button>
-        </div>
-      )}
-      {ttsError && (
-        <div className="fixed bottom-60 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded shadow z-50">
-          <span className="font-mono text-sm">{ttsError}</span>
-        </div>
-      )}
+      <div className="mt-4">
+        <button onClick={handleStart} disabled={wsVoice.isStreaming} className="btn btn-primary">Start Voice</button>
+        <button onClick={handleStop} disabled={!wsVoice.isStreaming} className="btn btn-secondary ml-2">Stop</button>
+      </div>
+      <div className="mt-4">
+        <div className="font-mono text-lg">Transcript: {transcript}</div>
+        {wsVoice.error && <div className="text-red-600">{wsVoice.error}</div>}
+      </div>
     </div>
   )
 } 
