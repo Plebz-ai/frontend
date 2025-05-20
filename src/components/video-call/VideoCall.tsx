@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createWebSocketClient, getWebSocketUrlForCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
-import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle, FaVolumeUp } from 'react-icons/fa'
+import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle, FaVolumeUp, FaMicrophoneSlash } from 'react-icons/fa'
 import { useSpeechRecognition, supportsStreamingPost } from '../../hooks/useSpeechRecognition'
 import { useVoiceWebSocket } from '../../hooks/useVoiceWebSocket'
 
@@ -78,6 +78,9 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const [audioBufferQueue, setAudioBufferQueue] = useState<Uint8Array[]>([])
   
   const [activePipeline, setActivePipeline] = useState<'streamingPost' | 'websocket' | null>(null)
+  
+  const [isMicActive, setIsMicActive] = useState(false)
+  const [micError, setMicError] = useState<string | null>(null)
   
   // Auto-start video call when component mounts
   useEffect(() => {
@@ -195,20 +198,26 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
 
   // Decide which pipeline to use (only once)
   useEffect(() => {
-    if (supportsStreamingPost()) {
-      setActivePipeline('streamingPost')
-      // Start streaming POST pipeline
-      const cleanup = startStreamingRecognition((t) => setTranscript(t))
-      return cleanup
-    } else if (wsVoice) {
-      setActivePipeline('websocket')
-      wsVoice.start()
-      return () => wsVoice.stop()
-    } else {
-      setActivePipeline(null)
-      setError('No supported voice pipeline found. Please use the latest Chrome/Edge or try the WebSocket option.')
+    let cleanupFn = undefined;
+    async function startPipeline() {
+      if (supportsStreamingPost()) {
+        setActivePipeline('streamingPost');
+        // Start streaming POST pipeline
+        cleanupFn = await startStreamingRecognition((t) => setTranscript(t));
+      } else if (wsVoice) {
+        setActivePipeline('websocket');
+        wsVoice.start();
+        cleanupFn = () => wsVoice.stop();
+      } else {
+        setActivePipeline(null);
+        setError('No supported voice pipeline found. Please use the latest Chrome/Edge or try the WebSocket option.');
+      }
     }
-  }, [/* dependencies for pipeline selection */])
+    startPipeline();
+    return () => {
+      if (cleanupFn) cleanupFn();
+    };
+  }, [/* dependencies for pipeline selection */]);
 
   // Streaming TTS playback for character responses (buffered)
   useEffect(() => {
@@ -618,6 +627,32 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const handleStart = () => wsVoice.start()
   const handleStop = () => wsVoice.stop()
 
+  // Mic button handler
+  const handleMicClick = async () => {
+    setMicError(null)
+    if (!isMicActive) {
+      try {
+        setIsMicActive(true)
+        if (activePipeline === 'streamingPost') {
+          const cleanup = await startStreamingRecognition((t) => setTranscript(t))
+          streamingStopRef.current = cleanup
+        } else if (activePipeline === 'websocket') {
+          wsVoice.start()
+        }
+      } catch (err) {
+        setMicError('Could not access microphone. Please check your browser settings and permissions.')
+        setIsMicActive(false)
+      }
+    } else {
+      setIsMicActive(false)
+      if (activePipeline === 'streamingPost' && streamingStopRef.current) {
+        streamingStopRef.current()
+      } else if (activePipeline === 'websocket') {
+        wsVoice.stop()
+      }
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
       <div className="bg-gray-900 rounded-xl w-full max-w-4xl p-4 h-[90vh] flex flex-col">
@@ -872,6 +907,18 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       {activePipeline === 'streamingPost' && <div className="text-green-600">Using Streaming POST pipeline</div>}
       {activePipeline === 'websocket' && <div className="text-blue-600">Using WebSocket pipeline</div>}
       {error && <div className="text-red-600">{error}</div>}
+      {/* Mic button and indicator (bottom center) */}
+      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 flex flex-col items-center">
+        <button
+          onClick={handleMicClick}
+          className={`rounded-full p-5 shadow-lg border-4 ${isMicActive ? 'bg-indigo-600 border-indigo-300' : 'bg-gray-700 border-gray-400'} flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-indigo-400`}
+          aria-label={isMicActive ? 'Stop Listening' : 'Start Listening'}
+        >
+          {isMicActive ? <FaMicrophone className="text-white w-8 h-8 animate-pulse" /> : <FaMicrophoneSlash className="text-white w-8 h-8" />}
+        </button>
+        <span className={`mt-2 text-lg font-bold ${isMicActive ? 'text-indigo-400' : 'text-gray-400'}`}>{isMicActive ? 'Listening...' : 'Mic Off'}</span>
+        {micError && <div className="mt-2 text-red-500 font-semibold">{micError}</div>}
+      </div>
     </div>
   )
 } 
