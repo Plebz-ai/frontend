@@ -47,8 +47,6 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
-  const { startStreamingRecognition } = useSpeechRecognition()
-  
   const [liveTranscript, setLiveTranscript] = useState('')
   const [isStreamingSTT, setIsStreamingSTT] = useState(false)
   const streamingStopRef = useRef<null | (() => void)>(null)
@@ -203,7 +201,7 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       if (supportsStreamingPost()) {
         setActivePipeline('streamingPost');
         // Start streaming POST pipeline
-        cleanupFn = await startStreamingRecognition((t) => setTranscript(t));
+        cleanupFn = () => {};
       } else if (wsVoice) {
         setActivePipeline('websocket');
         wsVoice.start();
@@ -596,7 +594,7 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     characterDetails: character,
     onTranscript: (t) => setTranscript(t),
     onTTS: (chunk) => setAudioBufferQueue((q) => [...q, chunk]),
-    onError: (err) => setError(err),
+    onError: (err) => setMicError(err),
   })
 
   // Play PCM audio as it streams in
@@ -632,24 +630,19 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     setMicError(null)
     if (!isMicActive) {
       try {
+        // Try to get mic access and log the result
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Mic access granted:', stream);
         setIsMicActive(true)
-        if (activePipeline === 'streamingPost') {
-          const cleanup = await startStreamingRecognition((t) => setTranscript(t))
-          streamingStopRef.current = cleanup
-        } else if (activePipeline === 'websocket') {
-          wsVoice.start()
-        }
+        wsVoice.start()
       } catch (err) {
-        setMicError('Could not access microphone. Please check your browser settings and permissions.')
+        console.error('Mic access error:', err);
+        setMicError('Could not access microphone. ' + (err && err.message ? err.message : 'Please check your browser settings and permissions.'))
         setIsMicActive(false)
       }
     } else {
       setIsMicActive(false)
-      if (activePipeline === 'streamingPost' && streamingStopRef.current) {
-        streamingStopRef.current()
-      } else if (activePipeline === 'websocket') {
-        wsVoice.stop()
-      }
+      wsVoice.stop()
     }
   }
 

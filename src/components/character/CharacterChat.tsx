@@ -5,7 +5,6 @@ import { createWebSocketClient, getWebSocketUrlForCharacter, isCustomCharacter }
 import { Character } from '../../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
-import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
 import { FaMicrophone, FaMicrophoneSlash, FaPaperPlane, FaSpinner, FaVolumeUp, FaVideo, FaChevronRight, FaSmile } from 'react-icons/fa'
 import VideoCall from '../../components/video-call/VideoCall'
 
@@ -54,8 +53,6 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef<string>('');
   const clientIdRef = useRef<string>('');
-
-  const { startStreamingRecognition } = useSpeechRecognition();
 
   useEffect(() => {
     window.lastCharacter = character;
