@@ -83,6 +83,12 @@ export function createWebSocketClient(
         console.warn('[AI-Layer2] audio_data is not a string, defaulting to empty string.');
         body.audio_data = '';
       }
+      // --- Prevent sending empty payloads ---
+      if ((body.mode === 'chat' && (!body.user_input || body.user_input.trim() === '')) ||
+          (body.mode === 'voice' && (!body.audio_data || body.audio_data.trim() === ''))) {
+        console.warn('[AI-Layer2] Not sending /interact request: user_input or audio_data is empty.');
+        return;
+      }
       console.log('[AI-Layer2 DEBUG] Outgoing payload to orchestrator:', JSON.stringify(body, null, 2));
       
       // Use Next.js proxy for AI Layer2: '/ai-layer/interact' => orchestrator

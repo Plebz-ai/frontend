@@ -285,27 +285,38 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
     }
     const fetchAndBuffer = async () => {
       try {
-        const resp = await fetch('/ai-layer/stream-text-to-speech', {
+        // Use orchestrator endpoint directly for TTS
+        const ttsUrl = process.env.NEXT_PUBLIC_AI_LAYER_URL
+          ? process.env.NEXT_PUBLIC_AI_LAYER_URL.replace(/\/$/, '') + '/stream-text-to-speech'
+          : 'http://localhost:8010/stream-text-to-speech';
+        const payload = { text: lastMsg.content, voice_type: character.voice_type || 'predefined' };
+        const resp = await fetch(ttsUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: lastMsg.content, voice_type: character.voice_type || 'predefined' })
-        })
-        if (!resp.body) throw new Error('No response body from TTS stream')
-        const reader = resp.body.getReader()
-        let partial = ''
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) {
+          let errorText = await resp.text();
+          setTtsError('TTS streaming failed: ' + errorText);
+          setIsTTSPlaying(false);
+          return;
+        }
+        if (!resp.body) throw new Error('No response body from TTS stream');
+        const reader = resp.body.getReader();
+        let partial = '';
         while (!abort) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const text = new TextDecoder().decode(value)
-          partial += text
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = new TextDecoder().decode(value);
+          partial += text;
           if (partial.length > 0) {
-            ttsQueueRef.current.push(partial)
-            partial = ''
+            ttsQueueRef.current.push(partial);
+            partial = '';
           }
         }
       } catch (err) {
-        setIsTTSPlaying(false)
-        setTtsError('TTS streaming failed. Please try again.')
+        setIsTTSPlaying(false);
+        setTtsError('TTS streaming failed. Please try again.');
       }
     }
     playBufferedChunks()

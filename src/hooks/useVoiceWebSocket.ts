@@ -35,7 +35,10 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
       // Create WebSocket
-      const ws = new WebSocket('ws://localhost:8010/ws/voice-session')
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsHost = window.location.host;
+      const wsUrl = `${wsProtocol}://${wsHost}/ai-layer/ws/voice-session`;
+      const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer'
       wsRef.current = ws
       ws.onopen = () => {
