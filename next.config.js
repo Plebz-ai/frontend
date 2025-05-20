@@ -7,7 +7,8 @@ const nextConfig = {
     NEXT_PUBLIC_AI_LAYER_URL: process.env.NEXT_PUBLIC_AI_LAYER_URL || '/ai-layer',
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || (process.env.NODE_ENV === 'production' 
       ? 'wss://your-production-domain.com/ws'
-      : 'ws://localhost:8082/ws')
+      : 'ws://localhost:8082/ws'),
+    ORCHESTRATOR_HOST: process.env.ORCHESTRATOR_HOST || 'localhost:8010'
   },
   async rewrites() {
     return [
@@ -27,6 +28,14 @@ const nextConfig = {
       {
         source: '/ws',
         destination: 'http://localhost:8081/ws',
+        basePath: false,
+      },
+      {
+        // WebSocket proxy for voice-session
+        source: '/ai-layer/ws/voice-session',
+        destination: process.env.ORCHESTRATOR_HOST
+          ? `${process.env.ORCHESTRATOR_HOST}/ws/voice-session`
+          : 'http://localhost:8010/ws/voice-session',
         basePath: false,
       }
     ];
