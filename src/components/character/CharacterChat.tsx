@@ -248,6 +248,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   };
 
   const handleQuickReply = (reply: string) => {
+    if (!reply.trim()) return;
     setInputMessage(reply)
     inputRef.current?.focus()
   }

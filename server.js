@@ -22,7 +22,7 @@ app.prepare().then(() => {
       target: AI_LAYER_WS_TARGET,
       changeOrigin: true,
       ws: true,
-      pathRewrite: { '^/ai-layer/ws/voice-session': '/ws/voice-session' },
+      pathRewrite: (path, req) => '/ws/voice-session',
       logLevel: 'debug',
     })
   );
@@ -33,7 +33,6 @@ app.prepare().then(() => {
     createProxyMiddleware({
       target: AI_LAYER_HTTP_TARGET,
       changeOrigin: true,
-      pathRewrite: { '^/ai-layer': '' },
       logLevel: 'debug',
     })
   );
@@ -44,7 +43,6 @@ app.prepare().then(() => {
     createProxyMiddleware({
       target: 'http://localhost:8081',
       changeOrigin: true,
-      pathRewrite: { '^/api': '/api' },
       logLevel: 'debug',
     })
   );
