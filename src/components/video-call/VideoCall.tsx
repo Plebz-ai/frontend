@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createWebSocketClient, getWebSocketUrlForCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
 import { FaMicrophone, FaPhoneSlash, FaVideo, FaVideoSlash, FaPaperPlane, FaSpinner, FaSmile, FaComments, FaTimesCircle, FaVolumeUp } from 'react-icons/fa'
-import { useSpeechRecognition } from '../../hooks/useSpeechRecognition'
+import { useSpeechRecognition, supportsStreamingPost } from '../../hooks/useSpeechRecognition'
 import { useVoiceWebSocket } from '../../hooks/useVoiceWebSocket'
 
 type CallState = 'idle' | 'connecting' | 'connected' | 'error' | 'ended'
@@ -76,6 +76,8 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null)
   const [audioBufferQueue, setAudioBufferQueue] = useState<Uint8Array[]>([])
+  
+  const [activePipeline, setActivePipeline] = useState<'streamingPost' | 'websocket' | null>(null)
   
   // Auto-start video call when component mounts
   useEffect(() => {
@@ -193,43 +195,20 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
 
   // Decide which pipeline to use (only once)
   useEffect(() => {
-    const supportsStreamingPost = () => {
-      try {
-        new Request('http://localhost', { method: 'POST', body: new ReadableStream(), duplex: 'half' });
-        return true;
-      } catch (e) {
-        return false;
-      }
-    };
-    setUseWebSocketSTT(!supportsStreamingPost());
-  }, []);
-
-  // Start the correct voice pipeline when call is connected
-  useEffect(() => {
-    let cleanupFn: (() => void) | undefined;
-    if (callState === 'connected') {
-      if (!useWebSocketSTT) {
-        setIsStreamingSTT(true);
-        setSttError(null);
-        streamingStopRef.current = startStreamingRecognition((transcript) => {
-          setLiveTranscript(transcript);
-        });
-        cleanupFn = () => {
-          if (typeof streamingStopRef.current === 'function') streamingStopRef.current();
-          setIsStreamingSTT(false);
-          setLiveTranscript('');
-        };
-      } else {
-        wsVoice.start();
-        setWsConnected(true);
-        cleanupFn = () => {
-          wsVoice.stop();
-          setWsConnected(false);
-        };
-      }
+    if (supportsStreamingPost()) {
+      setActivePipeline('streamingPost')
+      // Start streaming POST pipeline
+      const cleanup = startStreamingRecognition((t) => setTranscript(t))
+      return cleanup
+    } else if (wsVoice) {
+      setActivePipeline('websocket')
+      wsVoice.start()
+      return () => wsVoice.stop()
+    } else {
+      setActivePipeline(null)
+      setError('No supported voice pipeline found. Please use the latest Chrome/Edge or try the WebSocket option.')
     }
-    return cleanupFn;
-  }, [callState, useWebSocketSTT]);
+  }, [/* dependencies for pipeline selection */])
 
   // Streaming TTS playback for character responses (buffered)
   useEffect(() => {
@@ -889,6 +868,10 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
         <div className="font-mono text-lg">Transcript: {transcript}</div>
         {wsVoice.error && <div className="text-red-600">{wsVoice.error}</div>}
       </div>
+      {/* UI feedback for pipeline */}
+      {activePipeline === 'streamingPost' && <div className="text-green-600">Using Streaming POST pipeline</div>}
+      {activePipeline === 'websocket' && <div className="text-blue-600">Using WebSocket pipeline</div>}
+      {error && <div className="text-red-600">{error}</div>}
     </div>
   )
 } 

@@ -1,18 +1,18 @@
 import { useCallback, useRef } from 'react'
 
+// Helper to check if browser supports streaming POST with ReadableStream and duplex: 'half'
+export function supportsStreamingPost() {
+  try {
+    new Request('http://localhost', { method: 'POST', body: new ReadableStream(), duplex: 'half' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 export function useSpeechRecognition() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-
-  // Helper to check if browser supports streaming POST with ReadableStream and duplex: 'half'
-  export function supportsStreamingPost() {
-    try {
-      new Request('http://localhost', { method: 'POST', body: new ReadableStream(), duplex: 'half' });
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
 
   // Streaming speech-to-text (real-time)
   const startStreamingRecognition = useCallback(async (onTranscript: (transcript: string) => void) => {
