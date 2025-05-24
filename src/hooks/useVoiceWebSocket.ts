@@ -57,16 +57,27 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
           ws.send(pcm.buffer)
         }
         // Cleanup
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           setIsConnected(false)
           setIsStreaming(false)
           processor.disconnect()
           source.disconnect()
           audioCtx.close()
+          const reason = event && event.reason ? event.reason : 'WebSocket closed';
+          setError('WebSocket closed: ' + reason + ' (code: ' + (event && event.code) + ')')
+          if (onError) onError('WebSocket closed: ' + reason + ' (code: ' + (event && event.code) + ')')
+          console.error('WebSocket closed:', event)
         }
         ws.onerror = (err) => {
-          setError('WebSocket error')
-          onError && onError('WebSocket error')
+          let errorMsg = 'WebSocket error';
+          if (err && typeof err === 'object' && 'message' in err) {
+            errorMsg = 'WebSocket error: ' + (err as any).message;
+          } else if (err && typeof err === 'object' && 'type' in err) {
+            errorMsg = 'WebSocket error: ' + (err as any).type;
+          }
+          setError(errorMsg)
+          if (onError) onError(errorMsg)
+          console.error('WebSocket error:', err)
         }
         ws.onmessage = (event) => {
           // Expect transcript or TTS audio (PCM)
