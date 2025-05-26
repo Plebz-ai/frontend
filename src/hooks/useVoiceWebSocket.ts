@@ -48,7 +48,7 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
         // Start audio processing
         const audioCtx = new window.AudioContext({ sampleRate: 16000 })
         const source = audioCtx.createMediaStreamSource(stream)
-        const processor = audioCtx.createScriptProcessor(1024, 1, 1)
+        const processor = audioCtx.createScriptProcessor(512, 1, 1)
         source.connect(processor)
         processor.connect(audioCtx.destination)
         processor.onaudioprocess = (e) => {
