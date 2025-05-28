@@ -604,7 +604,38 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const wsVoice = useVoiceWebSocket({
     characterDetails: character,
     onTranscript: (t) => setTranscript(t),
-    onTTS: (chunk) => setAudioBufferQueue((q) => [...q, chunk]),
+    onTTS: (chunk) => {
+      if (activePipeline !== 'websocket') return;
+      if (chunk && chunk instanceof Uint8Array) {
+        ttsQueueRef.current.push(chunk);
+      } else if (chunk === null) {
+        // End of TTS stream: play all buffered audio
+        if (ttsQueueRef.current.length > 0) {
+          const buffer = [...ttsQueueRef.current];
+          ttsQueueRef.current = [];
+          // Play the buffer as a single audio
+          const totalLength = buffer.reduce((acc, arr) => acc + arr.length, 0);
+          const merged = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const arr of buffer) {
+            merged.set(arr, offset);
+            offset += arr.length;
+          }
+          const blob = new Blob([merged], { type: 'audio/mpeg' });
+          const url = URL.createObjectURL(blob);
+          if (!audioRef.current) {
+            audioRef.current = new Audio();
+            audioRef.current.onended = () => setIsTTSPlaying(false);
+          }
+          audioRef.current.src = url;
+          audioRef.current.play().catch(() => setTtsError('Audio playback failed.'));
+          audioRef.current.onended = () => {
+            URL.revokeObjectURL(url);
+            setIsTTSPlaying(false);
+          };
+        }
+      }
+    },
     onError: (err) => setMicError(err),
   })
 
@@ -656,6 +687,60 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
       wsVoice.stop()
     }
   }
+
+  // --- Add: WebSocket TTS streaming support ---
+  useEffect(() => {
+    if (activePipeline !== 'websocket') return;
+    let abort = false;
+    setIsTTSPlaying(false);
+    setTtsError(null);
+    setTtsBuffering(true);
+    ttsQueueRef.current = [];
+    ttsPlayingRef.current = false;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    // Buffer and play TTS chunks from WebSocket
+    const playBufferedChunks = async () => {
+      let chunks: Uint8Array[] = [];
+      let playing = false;
+      const playBuffer = (buffer: Uint8Array[]) => {
+        if (buffer.length === 0) return;
+        const totalLength = buffer.reduce((acc, arr) => acc + arr.length, 0);
+        const merged = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const arr of buffer) {
+          merged.set(arr, offset);
+          offset += arr.length;
+        }
+        const blob = new Blob([merged], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        if (!audioRef.current) {
+          audioRef.current = new Audio();
+          audioRef.current.onended = () => setIsTTSPlaying(false);
+        }
+        audioRef.current.src = url;
+        audioRef.current.play().catch(() => setTtsError('Audio playback failed.'));
+        audioRef.current.onended = () => {
+          URL.revokeObjectURL(url);
+          setIsTTSPlaying(false);
+        };
+      };
+      while (!abort) {
+        if (ttsQueueRef.current.length > 0) {
+          while (ttsQueueRef.current.length > 0) {
+            const chunk = ttsQueueRef.current.shift();
+            if (chunk) chunks.push(chunk);
+          }
+        }
+        await new Promise(res => setTimeout(res, 60));
+      }
+    };
+    playBufferedChunks();
+    return () => { abort = true; setIsTTSPlaying(false); setTtsBuffering(false); };
+  }, [activePipeline]);
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">

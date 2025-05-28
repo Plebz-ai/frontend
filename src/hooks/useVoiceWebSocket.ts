@@ -120,6 +120,17 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
             if (msg.type === 'transcript' || msg.type === 'transcript_final') {
               console.log('[VoiceWS] Transcript:', msg.text)
               if (onTranscript) onTranscript(msg.text)
+            } else if (msg.type === 'tts_chunk' || msg.type === 'MSG_TYPE_TTS_CHUNK') {
+              // Handle TTS audio chunk (base64)
+              if (onTTS && msg.audio) {
+                const binary = atob(msg.audio)
+                const bytes = new Uint8Array(binary.length)
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+                onTTS(bytes)
+              }
+            } else if (msg.type === 'tts_end' || msg.type === 'MSG_TYPE_TTS_END') {
+              // Signal end of TTS stream
+              if (onTTS) onTTS(null)
             } else if (msg.type === 'error') {
               console.error('[VoiceWS] Error:', msg.error)
               if (onError) onError(msg.error)
