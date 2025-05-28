@@ -16,14 +16,15 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
   const [error, setError] = useState<string | null>(null)
 
   // Buffer for accumulating PCM samples
-  let pcmBuffer: Int16Array = new Int16Array(0);
+  let pcmBuffer: Int16Array = new Int16Array(0)
+  let ws: WebSocket | null = null
 
   // Helper: Convert Float32Array to 16-bit PCM
   function floatTo16BitPCM(input: Float32Array) {
     const output = new Int16Array(input.length)
     for (let i = 0; i < input.length; i++) {
       let s = Math.max(-1, Math.min(1, input[i]))
-      output[i] = s < 0 ? s * 0x8000 : s * 0x7fff
+      output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
     }
     return output
   }
@@ -53,11 +54,10 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
       // Get mic
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
-      // Create WebSocket
+      // Create WebSocket to orchestrator, not STT service
       const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const wsHost = window.location.host;
-      const wsUrl = `${wsProtocol}://${wsHost}/ai-layer/ws/voice-session`;
-      const ws = new WebSocket(wsUrl);
+      const wsUrl = `${wsProtocol}://localhost:8010/ws/voice-session`;
+      ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer'
       wsRef.current = ws
       ws.onopen = () => {
@@ -65,27 +65,30 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
         // Send INIT with character details
         ws.send(JSON.stringify({ type: 'init', characterDetails }))
         // Start audio processing
-        const audioCtx = new window.AudioContext()
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
         const source = audioCtx.createMediaStreamSource(stream)
-        const processor = audioCtx.createScriptProcessor(512, 1, 1)
+        const processor = audioCtx.createScriptProcessor(4096, 1, 1)
         source.connect(processor)
         processor.connect(audioCtx.destination)
         processor.onaudioprocess = (e) => {
           const input = e.inputBuffer.getChannelData(0)
-          const resampled = resampleTo16kHz(input, audioCtx.sampleRate)
-          const pcm = floatTo16BitPCM(resampled)
-
+          const pcm = floatTo16BitPCM(input)
           // Concatenate new PCM to buffer
           let combined = new Int16Array(pcmBuffer.length + pcm.length)
           combined.set(pcmBuffer, 0)
           combined.set(pcm, pcmBuffer.length)
           pcmBuffer = combined
-
-          // Send 960-sample (1920-byte) chunks
-          while (pcmBuffer.length >= 960) {
-            const chunk = pcmBuffer.slice(0, 960)
-            ws.send(chunk.buffer)
-            pcmBuffer = pcmBuffer.slice(960)
+          // Only send if we have at least 16,000 samples (1 second)
+          if (pcmBuffer.length >= 16000) {
+            let offset = 0
+            while (pcmBuffer.length - offset >= 960) {
+              const chunk = pcmBuffer.slice(offset, offset + 960)
+              ws?.send(chunk.buffer)
+              offset += 960
+            }
+            // Keep any remainder in the buffer
+            pcmBuffer = pcmBuffer.slice(offset)
+            console.log('[VoiceWS] Sent', offset, 'samples to orchestrator')
           }
         }
         // Cleanup
@@ -112,14 +115,19 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
           console.error('WebSocket error:', err)
         }
         ws.onmessage = (event) => {
-          // Expect transcript or TTS audio (PCM)
-          if (typeof event.data === 'string') {
-            try {
-              const msg = JSON.parse(event.data)
-              if (msg.type === 'transcript' && onTranscript) onTranscript(msg.text)
-            } catch {}
-          } else if (event.data instanceof ArrayBuffer) {
-            if (onTTS) onTTS(new Uint8Array(event.data))
+          try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === 'transcript' || msg.type === 'transcript_final') {
+              console.log('[VoiceWS] Transcript:', msg.text)
+              if (onTranscript) onTranscript(msg.text)
+            } else if (msg.type === 'error') {
+              console.error('[VoiceWS] Error:', msg.error)
+              if (onError) onError(msg.error)
+            } else {
+              console.log('[VoiceWS] Message:', msg)
+            }
+          } catch (e) {
+            console.error('[VoiceWS] Non-JSON message:', event.data)
           }
         }
       }
