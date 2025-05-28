@@ -15,6 +15,9 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Buffer for accumulating PCM samples
+  let pcmBuffer: Int16Array = new Int16Array(0);
+
   // Helper: Convert Float32Array to 16-bit PCM
   function floatTo16BitPCM(input: Float32Array) {
     const output = new Int16Array(input.length)
@@ -23,6 +26,22 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
       output[i] = s < 0 ? s * 0x8000 : s * 0x7fff
     }
     return output
+  }
+
+  // Helper: Resample Float32Array to 16kHz
+  function resampleTo16kHz(input: Float32Array, inputSampleRate: number): Float32Array {
+    if (inputSampleRate === 16000) return input;
+    const sampleRateRatio = inputSampleRate / 16000;
+    const newLength = Math.round(input.length / sampleRateRatio);
+    const output = new Float32Array(newLength);
+    for (let i = 0; i < newLength; i++) {
+      const idx = i * sampleRateRatio;
+      const idx1 = Math.floor(idx);
+      const idx2 = Math.min(idx1 + 1, input.length - 1);
+      const frac = idx - idx1;
+      output[i] = input[idx1] * (1 - frac) + input[idx2] * frac;
+    }
+    return output;
   }
 
   // Start streaming audio to backend via WebSocket
@@ -46,15 +65,28 @@ export function useVoiceWebSocket({ characterDetails, onTranscript, onTTS, onErr
         // Send INIT with character details
         ws.send(JSON.stringify({ type: 'init', characterDetails }))
         // Start audio processing
-        const audioCtx = new window.AudioContext({ sampleRate: 16000 })
+        const audioCtx = new window.AudioContext()
         const source = audioCtx.createMediaStreamSource(stream)
         const processor = audioCtx.createScriptProcessor(512, 1, 1)
         source.connect(processor)
         processor.connect(audioCtx.destination)
         processor.onaudioprocess = (e) => {
           const input = e.inputBuffer.getChannelData(0)
-          const pcm = floatTo16BitPCM(input)
-          ws.send(pcm.buffer)
+          const resampled = resampleTo16kHz(input, audioCtx.sampleRate)
+          const pcm = floatTo16BitPCM(resampled)
+
+          // Concatenate new PCM to buffer
+          let combined = new Int16Array(pcmBuffer.length + pcm.length)
+          combined.set(pcmBuffer, 0)
+          combined.set(pcm, pcmBuffer.length)
+          pcmBuffer = combined
+
+          // Send 960-sample (1920-byte) chunks
+          while (pcmBuffer.length >= 960) {
+            const chunk = pcmBuffer.slice(0, 960)
+            ws.send(chunk.buffer)
+            pcmBuffer = pcmBuffer.slice(960)
+          }
         }
         // Cleanup
         ws.onclose = (event) => {
