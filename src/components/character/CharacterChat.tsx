@@ -69,6 +69,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   // Add userId (mock for now, replace with real userId from auth)
   const userId = 1;
 
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsModalRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     window.lastCharacter = character;
     console.warn('[CharacterChat] Mounted for character.id:', character.id, 'sessionId:', sessionIdRef.current)
@@ -425,6 +428,20 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     }
   }, [userPreferences?.theme]);
 
+  // Focus management for settings modal
+  useEffect(() => {
+    if (showSettings && settingsModalRef.current) {
+      settingsModalRef.current.focus();
+    }
+  }, [showSettings]);
+
+  const closeSettings = () => {
+    setShowSettings(false);
+    setTimeout(() => {
+      settingsButtonRef.current?.focus();
+    }, 0);
+  };
+
   return (
     <div className={`flex flex-col h-full relative bg-[#0e0f13] ${userPreferences?.theme === 'light' ? 'theme-light' : 'theme-dark'}`}>
       {connectionError && (
@@ -499,7 +516,15 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             <span className="font-medium">Video Call</span>
           </button>
         </div>
-        <button aria-label="Settings" onClick={openSettings} style={{marginLeft: 8}}>⚙️</button>
+        <button
+          aria-label="Open user preferences"
+          onClick={openSettings}
+          style={{marginLeft: 8}}
+          ref={settingsButtonRef}
+          tabIndex={0}
+        >
+          ⚙️
+        </button>
       </div>
 
       {/* Chat Messages Area with subtle gradient background */}
@@ -759,46 +784,71 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
       {/* Settings Modal */}
       {showSettings && (
-        <div role="dialog" aria-modal="true" className="settings-modal">
-          <h2>User Preferences</h2>
-          {prefsError && <div className="error">{prefsError}</div>}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-modal-title"
+          className="settings-modal"
+          tabIndex={-1}
+          ref={settingsModalRef}
+          onKeyDown={e => {
+            if (e.key === 'Escape') closeSettings();
+            // Trap focus inside modal
+            if (e.key === 'Tab') {
+              const focusable = settingsModalRef.current?.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+              if (focusable && focusable.length > 0) {
+                const first = focusable[0] as HTMLElement;
+                const last = focusable[focusable.length - 1] as HTMLElement;
+                if (!e.shiftKey && document.activeElement === last) {
+                  e.preventDefault();
+                  first.focus();
+                } else if (e.shiftKey && document.activeElement === first) {
+                  e.preventDefault();
+                  last.focus();
+                }
+              }
+            }
+          }}
+        >
+          <h2 id="settings-modal-title">User Preferences</h2>
+          {prefsError && <div className="error" role="alert">{prefsError}</div>}
           <form onSubmit={e => { e.preventDefault(); savePreferences(userPreferences); }}>
-            <label>
-              Chat Style:
-              <select
-                value={userPreferences?.chatStyle || ''}
-                onChange={e => setUserPreferences((p: any) => ({ ...p, chatStyle: e.target.value }))}
-              >
-                <option value="">Select</option>
-                <option value="concise">Concise</option>
-                <option value="detailed">Detailed</option>
-              </select>
-            </label>
-            <label>
-              TTS Voice:
-              <select
-                value={userPreferences?.ttsVoice || ''}
-                onChange={e => setUserPreferences((p: any) => ({ ...p, ttsVoice: e.target.value }))}
-              >
-                <option value="">Select</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="predefined">Predefined</option>
-              </select>
-            </label>
-            <label>
-              Theme:
-              <select
-                value={userPreferences?.theme || ''}
-                onChange={e => setUserPreferences((p: any) => ({ ...p, theme: e.target.value }))}
-              >
-                <option value="">Select</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
-            <button type="submit" disabled={savingPrefs}>Save</button>
-            <button type="button" onClick={() => setShowSettings(false)} disabled={savingPrefs}>Cancel</button>
+            <label htmlFor="chat-style-select">Chat Style:</label>
+            <select
+              id="chat-style-select"
+              value={userPreferences?.chatStyle || ''}
+              onChange={e => setUserPreferences((p: any) => ({ ...p, chatStyle: e.target.value }))}
+              aria-label="Chat style"
+            >
+              <option value="">Select</option>
+              <option value="concise">Concise</option>
+              <option value="detailed">Detailed</option>
+            </select>
+            <label htmlFor="tts-voice-select">TTS Voice:</label>
+            <select
+              id="tts-voice-select"
+              value={userPreferences?.ttsVoice || ''}
+              onChange={e => setUserPreferences((p: any) => ({ ...p, ttsVoice: e.target.value }))}
+              aria-label="TTS voice"
+            >
+              <option value="">Select</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="predefined">Predefined</option>
+            </select>
+            <label htmlFor="theme-select">Theme:</label>
+            <select
+              id="theme-select"
+              value={userPreferences?.theme || ''}
+              onChange={e => setUserPreferences((p: any) => ({ ...p, theme: e.target.value }))}
+              aria-label="Theme"
+            >
+              <option value="">Select</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <button type="submit" disabled={savingPrefs} aria-label="Save preferences">Save</button>
+            <button type="button" onClick={closeSettings} disabled={savingPrefs} aria-label="Cancel and close preferences">Cancel</button>
           </form>
         </div>
       )}
