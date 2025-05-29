@@ -280,35 +280,34 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       timestamp: Date.now(),
     };
 
-    // Check if connected first
     if (!isConnected) {
       setConnectionError('Not connected to character service. Please try refreshing the page.');
       return;
     }
 
-    // Optimistically add message to UI
     setMessages(prev => [...prev, message]);
     setInputMessage('');
     setIsTyping(true);
     setShowQuickReplies(false);
 
-    // Then send to websocket/API
-    console.log('[CharacterChat] Sending message:', message.content);
-    wsClientRef.current.sendMessage('chat', message);
-    
-    // Save to backend
+    // Send to websocket/API, include chatStyle if set
+    wsClientRef.current.sendMessage('chat', {
+      ...message,
+      chatStyle: userPreferences?.chatStyle || undefined,
+    });
+
     try {
       await axios.post('/api/messages', {
         sessionId: sessionIdRef.current,
         characterId: character.id,
         content: message.content,
         sender: 'user',
+        chatStyle: userPreferences?.chatStyle || undefined,
       });
     } catch (err) {
       console.error('Failed to save message to backend:', err);
     }
-    
-    // Reset textarea height
+
     if (inputRef.current) {
       inputRef.current.style.height = 'auto';
     }
@@ -413,8 +412,21 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     }
   };
 
+  // Add effect to apply theme
+  useEffect(() => {
+    if (!userPreferences?.theme) return;
+    const root = document.documentElement;
+    if (userPreferences.theme === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light');
+    } else {
+      root.classList.add('light');
+      root.classList.remove('dark');
+    }
+  }, [userPreferences?.theme]);
+
   return (
-    <div className="flex flex-col h-full relative bg-[#0e0f13]">
+    <div className={`flex flex-col h-full relative bg-[#0e0f13] ${userPreferences?.theme === 'light' ? 'theme-light' : 'theme-dark'}`}>
       {connectionError && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
