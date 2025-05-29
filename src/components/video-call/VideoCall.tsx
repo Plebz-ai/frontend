@@ -23,6 +23,7 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   const [status, setStatus] = useState<string>('Idle');
   const [showMicPrompt, setShowMicPrompt] = useState(true);
   const [selectedVoice, setSelectedVoice] = useState<string>(userPreferences?.ttsVoice || 'predefined');
+  const [isStarting, setIsStarting] = useState(false);
 
   // Audio pipeline refs
   const ttsAudioChunks = useRef<Uint8Array[]>([]);
@@ -33,28 +34,43 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
   
   // --- Start Call Handler ---
   const handleStartCall = () => {
+    if (isCallStarted || isStarting || (wsRef.current && (wsRef.current.readyState === 0 || wsRef.current.readyState === 1))) {
+      console.warn('[VideoCall] Start call ignored: already started or connecting');
+      return; // Prevent double start
+    }
+    setIsStarting(true);
     setShowMicPrompt(false);
     setIsCallStarted(true);
     setStatus('Connecting...');
-    // Open WebSocket and set up handlers
+    console.log('[VideoCall] Opening WebSocket connection...');
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/video-session`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+    let initSent = false;
 
     ws.onopen = () => {
       setIsConnected(true);
       setStatus('Connected');
-      ws.send(JSON.stringify({ type: 'INIT', ttsVoice: selectedVoice, characterDetails: character }));
+      if (!initSent) {
+        ws.send(JSON.stringify({ type: 'init', character_details: { ...character, ttsVoice: selectedVoice } }));
+        initSent = true;
+        console.log('[VideoCall] INIT message sent');
+      } else {
+        console.warn('[VideoCall] INIT message already sent, skipping');
+      }
+      setIsStarting(false);
     };
 
     ws.onclose = () => {
       setIsConnected(false);
       setStatus('Disconnected');
+      setIsStarting(false);
     };
 
     ws.onerror = (e) => {
       setWsError('WebSocket error');
       setStatus('Error');
+      setIsStarting(false);
     };
 
     ws.onmessage = (event) => {
@@ -173,6 +189,7 @@ export default function VideoCall({ character, onClose, sessionId, initialMessag
               onClick={handleStartCall}
               className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 transition text-lg flex items-center gap-2 shadow-lg"
               aria-label="Start Voice Call"
+              disabled={isCallStarted || isStarting}
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75v1.5m0 0a6.75 6.75 0 01-6.75-6.75v-3A6.75 6.75 0 0112 3.75a6.75 6.75 0 016.75 6.75v3a6.75 6.75 0 01-6.75 6.75zm0 0v-1.5" />

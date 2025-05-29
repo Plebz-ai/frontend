@@ -20,6 +20,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   const [isMicActive, setIsMicActive] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>(userPreferences?.ttsVoice || 'predefined');
+  const [isStarting, setIsStarting] = useState(false);
 
   // Audio pipeline refs
   const ttsAudioChunks = useRef<Uint8Array[]>([]);
@@ -31,8 +32,16 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
 
+  const initSentRef = useRef(false);
+  const audioStreamingStartedRef = useRef(false);
+
   // --- Audio Streaming Logic ---
   const startAudioStreaming = async () => {
+    if (audioStreamingStartedRef.current) {
+      console.warn('[VoiceCall] Audio streaming already started, skipping');
+      return;
+    }
+    audioStreamingStartedRef.current = true;
     try {
       setMicError(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
@@ -47,6 +56,10 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       setIsMicActive(true);
 
       processor.onaudioprocess = (e) => {
+        if (!initSentRef.current) {
+          // Don't send audio until INIT is sent
+          return;
+        }
         const input = e.inputBuffer.getChannelData(0);
         // Convert Float32Array [-1,1] to 16-bit PCM
         const pcm = new Int16Array(input.length);
@@ -57,6 +70,9 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
         const pcmBytes = new Uint8Array(pcm.buffer);
         if (wsRef.current && wsRef.current.readyState === 1) {
           wsRef.current.send(pcmBytes);
+          if (pcmBytes.length > 0) {
+            console.log(`[VoiceCall] [${new Date().toISOString()}] Sent ${pcmBytes.length} bytes of audio to orchestrator`);
+          }
         }
       };
     } catch (err: any) {
@@ -83,36 +99,71 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   };
 
   // --- Start Call Handler ---
-  const handleStartCall = () => {
+  const handleStartCall = async () => {
+    if (isCallStarted || isStarting || (wsRef.current && (wsRef.current.readyState === 0 || wsRef.current.readyState === 1))) {
+      console.warn('[VoiceCall] Start call ignored: already started or connecting');
+      return; // Prevent double start
+    }
+    setIsStarting(true);
     setShowMicPrompt(false);
+    setTtsError(null);
+    setWsError(null);
+    setMicError(null);
+
+    // 1. Prompt for mic access first
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+      mediaStreamRef.current = stream;
+      setIsMicActive(true);
+    } catch (err: any) {
+      setMicError('Microphone access denied or unavailable.');
+      setIsMicActive(false);
+      setIsStarting(false);
+      setShowMicPrompt(true);
+      return;
+    }
+
+    // 2. Only proceed if mic access granted
     setIsCallStarted(true);
     setStatus('Connecting...');
+    console.log('[VoiceCall] Opening WebSocket connection...');
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/voice-session`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log('[VoiceCall] Connected successfully');
       setIsConnected(true);
       setStatus('Connected');
-      ws.send(JSON.stringify({ type: 'INIT', ttsVoice: selectedVoice, characterDetails: character }));
-      startAudioStreaming();
+      if (!initSentRef.current) {
+        ws.send(JSON.stringify({ type: 'init', characterDetails: { ...character, ttsVoice: selectedVoice } }));
+        initSentRef.current = true;
+        console.log(`[VoiceCall] [${new Date().toISOString()}] INIT message sent`);
+      } else {
+        console.warn('[VoiceCall] INIT message already sent, skipping');
+      }
+      setIsStarting(false);
     };
 
     ws.onclose = () => {
       setIsConnected(false);
       setStatus('Disconnected');
       stopAudioStreaming();
+      setIsStarting(false);
     };
 
     ws.onerror = (e) => {
       setWsError('WebSocket error');
       setStatus('Error');
       stopAudioStreaming();
+      setIsStarting(false);
     };
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('[VoiceCall] WebSocket message received:', data);
+
         if (data.type === 'tts_mime_type') {
           ttsMimeTypeRef.current = data.mime_type;
         } else if (data.type === 'tts_chunk') {
@@ -165,6 +216,10 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           });
         } else if (data.type === 'greeting') {
           setStatus('Call started');
+          if (!audioStreamingStartedRef.current) {
+            startAudioStreaming();
+            console.log('[VoiceCall] Audio streaming started after greeting');
+          }
         } else if (data.type === 'error') {
           setTtsError(data.error || 'TTS error');
         }
@@ -197,12 +252,16 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
     setWsError(null);
     setIsTTSPlaying(false);
     setMicError(null);
+    audioStreamingStartedRef.current = false;
+    initSentRef.current = false;
     onClose();
   };
 
   // --- Cleanup on Unmount ---
   useEffect(() => {
+    console.log('[VoiceCall] MOUNTED');
     return () => {
+      console.log('[VoiceCall] UNMOUNTED');
       stopAudioStreaming();
       if (wsRef.current) wsRef.current.close();
       if (audioRef.current) {
@@ -223,13 +282,14 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
         <div className="mb-2">Status: <span className={isConnected ? 'text-green-400' : 'text-red-400'}>{status}</span></div>
         {ttsError && <div className="text-red-500 mb-2">{ttsError}</div>}
         {wsError && <div className="text-red-500 mb-2">{wsError}</div>}
-        {micError && <div className="text-red-500 mb-2">{micError}</div>}
+        {micError && <div className="text-red-500 mb-2 font-bold">Microphone error: {micError}</div>}
         {showMicPrompt && (
           <div className="flex flex-col items-center mb-4">
             <button
               onClick={handleStartCall}
               className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 transition text-lg flex items-center gap-2 shadow-lg"
               aria-label="Start Voice Call"
+              disabled={isCallStarted || isStarting}
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75v1.5m0 0a6.75 6.75 0 01-6.75-6.75v-3A6.75 6.75 0 0112 3.75a6.75 6.75 0 016.75 6.75v3a6.75 6.75 0 01-6.75 6.75zm0 0v-1.5" />

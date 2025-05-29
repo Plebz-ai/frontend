@@ -259,7 +259,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     // Fetch persistent chat history from backend
     const fetchHistory = async () => {
       try {
-        const res = await axios.get(`/api/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=${MAX_DISPLAY_MESSAGES}`);
+        const res = await axios.get(`/api/v1/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=${MAX_DISPLAY_MESSAGES}`);
         if (res.data && Array.isArray(res.data.messages)) {
           setMessages(res.data.messages);
           setHasMoreHistory(res.data.count > MAX_DISPLAY_MESSAGES);
@@ -300,7 +300,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     });
 
     try {
-      await axios.post('/api/messages', {
+      await axios.post('/api/v1/messages', {
         sessionId: sessionIdRef.current,
         characterId: character.id,
         content: message.content,
@@ -346,10 +346,12 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   }
 
   const handleVoiceCallClick = () => {
+    console.log('[CharacterChat] handleVoiceCallClick called');
     setShowVoiceCall(true);
   };
 
   const handleCloseVoiceCall = () => {
+    console.log('[CharacterChat] handleCloseVoiceCall called');
     setShowVoiceCall(false);
   };
 
@@ -361,7 +363,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
   const handleLoadMore = async () => {
     try {
-      const res = await axios.get(`/api/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=100&offset=${messages.length}`);
+      const res = await axios.get(`/api/v1/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=100&offset=${messages.length}`);
       if (res.data && Array.isArray(res.data.messages)) {
         setMessages(prev => [...res.data.messages, ...prev]);
         setHasMoreHistory(res.data.count > messages.length + res.data.messages.length);
@@ -375,7 +377,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const handleFeedback = async (messageId: string, type: 'up' | 'down' | 'flag') => {
     setFeedback(f => ({ ...f, [messageId]: type }));
     try {
-      await axios.post('/api/messages/feedback', {
+      await axios.post('/api/v1/messages/feedback', {
         messageId,
         userId,
         feedbackType: type,

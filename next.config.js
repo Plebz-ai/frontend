@@ -13,14 +13,15 @@ const nextConfig = {
   async rewrites() {
     return [
       {
-        // Next.js API routes - Go backend API
+        // Unified Backend API rewrite
+        // This proxies all /api requests to the Go backend
+        // It also handles the specific /api/messages path correctly
         source: '/api/:path*',
-        // Map to Go backend API
         destination: 'http://localhost:8081/api/:path*',
         basePath: false,
       },
       {
-        // Direct proxy for AI Layer2 services
+        // Direct proxy for AI Layer2 services (e.g., orchestrator)
         source: '/ai-layer/:path*',
         destination: 'http://localhost:8010/:path*',
         basePath: false,
@@ -31,13 +32,13 @@ const nextConfig = {
         basePath: false,
       },
       {
-        // WebSocket proxy for voice-session
+        // WebSocket proxy for voice-session (orchestrator)
         source: '/ai-layer/ws/voice-session',
         destination: process.env.ORCHESTRATOR_HOST
           ? `${process.env.ORCHESTRATOR_HOST}/ws/voice-session`
           : 'http://localhost:8010/ws/voice-session',
         basePath: false,
-      }
+      },
     ];
   },
   async headers() {

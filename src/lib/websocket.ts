@@ -141,19 +141,21 @@ export function createWebSocketClient(
       connected = true;
       console.log(`[WebSocket] OPEN: ${url}`);
       // Immediately send a ping/hello message to keep the connection alive
-      if (isCustom) {
-        sendMessage('ping', { clientId, sessionId });
-      } else {
+      // Removed initial ping for custom characters (Orchestrator) to ensure INIT is first
+      if (!isCustom) {
         sendMessage('ping', {});
       }
-      // Start periodic ping
-      pingInterval = setInterval(() => {
-        if (isCustom) {
-          sendMessage('ping', { clientId, sessionId });
-        } else {
-          sendMessage('ping', {});
-        }
-      }, 25000); // 25s
+      
+      // Start periodic ping (only for non-custom if not sent initially)
+      // Consider if orchestrator expects pings and add logic if needed after INIT ACK.
+      // For now, disabling periodic pings for custom (orchestrator) connections
+      if (!isCustom) {
+        pingInterval = setInterval(() => {
+          if (!isCustom) { // Double check within interval
+            sendMessage('ping', {});
+          }
+        }, 25000); // 25s
+      }
       onConnect();
     };
     ws.onclose = (event) => {
