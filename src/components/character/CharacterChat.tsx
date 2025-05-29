@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
 import { FaMicrophone, FaMicrophoneSlash, FaPaperPlane, FaSpinner, FaVolumeUp, FaVideo, FaChevronRight, FaSmile } from 'react-icons/fa'
 import VideoCall from '../../components/video-call/VideoCall'
+import VoiceCall from '../video-call/VoiceCall'
+import axios from 'axios'
 
 interface Message {
   id: string
@@ -29,6 +31,8 @@ const QUICK_REPLIES = [
   "Tell me a story"
 ];
 
+const MAX_DISPLAY_MESSAGES = 30;
+
 export default function CharacterChat({ character, onSessionIdChange, onMessagesChange }: CharacterChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState('')
@@ -44,6 +48,14 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const [reconnectBlocked, setReconnectBlocked] = useState(false)
   const [showVoiceCall, setShowVoiceCall] = useState(false)
   const [connectionError, setConnectionError] = useState<string | null>(null)
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [streamingMessage, setStreamingMessage] = useState<string | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{[id: string]: 'up' | 'down' | 'flag' | null}>({});
+  const [showSettings, setShowSettings] = useState(false);
+  const [userPreferences, setUserPreferences] = useState<any>(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
 
   const wsClientRef = useRef<ReturnType<typeof createWebSocketClient> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -53,6 +65,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef<string>('');
   const clientIdRef = useRef<string>('');
+
+  // Add userId (mock for now, replace with real userId from auth)
+  const userId = 1;
 
   useEffect(() => {
     window.lastCharacter = character;
@@ -136,6 +151,31 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           setIsTyping(true);
         } else if (data.type === 'audio') {
           handleAudioMessage(data.content);
+        } else if (data.type === 'text_response_stream') {
+          // Partial chunk from AI Layer
+          if (!streamingMessageId) {
+            const id = Math.random().toString(36).substring(7);
+            setStreamingMessageId(id);
+            setStreamingMessage(data.content);
+          } else {
+            setStreamingMessage((prev) => (prev || '') + data.content);
+          }
+          setIsTyping(true);
+          setShowQuickReplies(false);
+        } else if (data.type === 'text_response_stream_end') {
+          // End of stream, finalize message
+          if (streamingMessageId && streamingMessage) {
+            setMessages((prev) => [...prev, {
+              id: streamingMessageId,
+              sender: 'character',
+              content: streamingMessage,
+              timestamp: Date.now(),
+            }]);
+            setStreamingMessage(null);
+            setStreamingMessageId(null);
+          }
+          setIsTyping(false);
+          setShowQuickReplies(false);
         } else {
           // Ignore unknown types, do not throw
           console.warn('[CharacterChat] Unknown message type:', data.type, data);
@@ -212,8 +252,23 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     }
   }
 
+  useEffect(() => {
+    // Fetch persistent chat history from backend
+    const fetchHistory = async () => {
+      try {
+        const res = await axios.get(`/api/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=${MAX_DISPLAY_MESSAGES}`);
+        if (res.data && Array.isArray(res.data.messages)) {
+          setMessages(res.data.messages);
+          setHasMoreHistory(res.data.count > MAX_DISPLAY_MESSAGES);
+        }
+      } catch (err) {
+        console.error('Failed to fetch chat history:', err);
+      }
+    };
+    fetchHistory();
+  }, [character.id, onSessionIdChange]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !wsClientRef.current) return;
 
@@ -231,7 +286,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       return;
     }
 
-    // Add message to UI immediately
+    // Optimistically add message to UI
     setMessages(prev => [...prev, message]);
     setInputMessage('');
     setIsTyping(true);
@@ -240,6 +295,18 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     // Then send to websocket/API
     console.log('[CharacterChat] Sending message:', message.content);
     wsClientRef.current.sendMessage('chat', message);
+    
+    // Save to backend
+    try {
+      await axios.post('/api/messages', {
+        sessionId: sessionIdRef.current,
+        characterId: character.id,
+        content: message.content,
+        sender: 'user',
+      });
+    } catch (err) {
+      console.error('Failed to save message to backend:', err);
+    }
     
     // Reset textarea height
     if (inputRef.current) {
@@ -290,6 +357,62 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  const handleLoadMore = async () => {
+    try {
+      const res = await axios.get(`/api/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=100&offset=${messages.length}`);
+      if (res.data && Array.isArray(res.data.messages)) {
+        setMessages(prev => [...res.data.messages, ...prev]);
+        setHasMoreHistory(res.data.count > messages.length + res.data.messages.length);
+      }
+    } catch (err) {
+      console.error('Failed to load more history:', err);
+    }
+  };
+
+  // Feedback handler
+  const handleFeedback = async (messageId: string, type: 'up' | 'down' | 'flag') => {
+    setFeedback(f => ({ ...f, [messageId]: type }));
+    try {
+      await axios.post('/api/messages/feedback', {
+        messageId,
+        userId,
+        feedbackType: type,
+        timestamp: Date.now(),
+      });
+      // Optionally show a toast/confirmation
+    } catch (err) {
+      // Optionally show error toast
+      setFeedback(f => ({ ...f, [messageId]: null }));
+      console.error('Failed to send feedback:', err);
+    }
+  };
+
+  // Fetch preferences on open
+  const openSettings = async () => {
+    setShowSettings(true);
+    setPrefsError(null);
+    try {
+      const res = await axios.get('/api/user/preferences');
+      setUserPreferences(res.data.preferences || {});
+    } catch (err) {
+      setPrefsError('Failed to load preferences');
+    }
+  };
+
+  const savePreferences = async (prefs: any) => {
+    setSavingPrefs(true);
+    setPrefsError(null);
+    try {
+      await axios.post('/api/user/preferences', prefs);
+      setUserPreferences(prefs);
+      setShowSettings(false);
+    } catch (err) {
+      setPrefsError('Failed to save preferences');
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full relative bg-[#0e0f13]">
       {connectionError && (
@@ -331,12 +454,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       )}
       
       {showVoiceCall && (
-        <VideoCall
+        <VoiceCall
           character={character}
           onClose={handleCloseVoiceCall}
-          sessionId={sessionIdRef.current}
-          initialMessages={messages}
-          videoDisabled={true}
         />
       )}
       
@@ -367,6 +487,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             <span className="font-medium">Video Call</span>
           </button>
         </div>
+        <button aria-label="Settings" onClick={openSettings} style={{marginLeft: 8}}>⚙️</button>
       </div>
 
       {/* Chat Messages Area with subtle gradient background */}
@@ -377,7 +498,13 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
           backgroundImage: 'linear-gradient(to bottom, #0d0f17, #12141f)',
           backgroundAttachment: 'fixed'
         }}
+        role="log"
+        aria-live="polite"
+        tabIndex={0}
       >
+        {hasMoreHistory && (
+          <button onClick={handleLoadMore} className="mb-4 px-4 py-2 bg-gray-700 text-white rounded-lg">Load more</button>
+        )}
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="w-16 h-16 rounded-full bg-indigo-600/20 flex items-center justify-center mb-5">
@@ -412,6 +539,9 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
                 <div
                   key={message.id}
                   className={`${message.sender === 'user' ? 'justify-end' : 'justify-start'} ${isFirstInGroup ? 'mt-4' : 'mt-1'} flex`}
+                  tabIndex={0}
+                  aria-label={message.sender === 'character' ? 'AI message' : 'User message'}
+                  role="article"
                 >
                   {message.sender === 'character' && isFirstInGroup && (
                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-medium mr-2 mt-1 shadow-md">
@@ -447,6 +577,13 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
                         </button>
                       )}
                     </div>
+                    {message.sender === 'character' && (
+                      <div className="flex gap-2 mt-1">
+                        <button aria-label="Thumbs up" onClick={() => handleFeedback(message.id, 'up')} className={`p-1 rounded-full ${feedback[message.id]==='up'?'bg-green-600 text-white':'bg-gray-700 text-gray-300'}`}>👍</button>
+                        <button aria-label="Thumbs down" onClick={() => handleFeedback(message.id, 'down')} className={`p-1 rounded-full ${feedback[message.id]==='down'?'bg-red-600 text-white':'bg-gray-700 text-gray-300'}`}>👎</button>
+                        <button aria-label="Flag as hallucination" onClick={() => handleFeedback(message.id, 'flag')} className={`p-1 rounded-full ${feedback[message.id]==='flag'?'bg-yellow-600 text-white':'bg-gray-700 text-gray-300'}`}>🚩</button>
+                      </div>
+                    )}
                   </motion.div>
                   {message.sender === 'user' && isFirstInGroup && (
                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-medium ml-2 mt-1 shadow-md">
@@ -504,6 +641,27 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             <div ref={messagesEndRef} className="h-1" />
           </div>
         )}
+        {streamingMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="flex justify-start mt-2"
+          >
+            <div className="flex items-start space-x-2">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-medium shadow-md">
+                {character.name.charAt(0)}
+              </div>
+              <div className="bg-[#202536] border border-[#343a4f] rounded-2xl px-4 py-2 shadow-md">
+                <div className="flex space-x-1.5">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* Message Input Area - Modern Style */}
@@ -524,6 +682,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
               placeholder={isConnected ? `Message ${character.name}...` : "Connecting..."}
               className="w-full p-3 pl-4 pr-10 bg-transparent text-white border border-[#343a4f] rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none resize-none min-h-[48px] max-h-[120px] placeholder-gray-500"
               rows={1}
+              aria-label="Chat input"
             />
             
             <button
@@ -584,6 +743,52 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             Reconnect
           </button>
         </motion.div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div role="dialog" aria-modal="true" className="settings-modal">
+          <h2>User Preferences</h2>
+          {prefsError && <div className="error">{prefsError}</div>}
+          <form onSubmit={e => { e.preventDefault(); savePreferences(userPreferences); }}>
+            <label>
+              Chat Style:
+              <select
+                value={userPreferences?.chatStyle || ''}
+                onChange={e => setUserPreferences((p: any) => ({ ...p, chatStyle: e.target.value }))}
+              >
+                <option value="">Select</option>
+                <option value="concise">Concise</option>
+                <option value="detailed">Detailed</option>
+              </select>
+            </label>
+            <label>
+              TTS Voice:
+              <select
+                value={userPreferences?.ttsVoice || ''}
+                onChange={e => setUserPreferences((p: any) => ({ ...p, ttsVoice: e.target.value }))}
+              >
+                <option value="">Select</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="predefined">Predefined</option>
+              </select>
+            </label>
+            <label>
+              Theme:
+              <select
+                value={userPreferences?.theme || ''}
+                onChange={e => setUserPreferences((p: any) => ({ ...p, theme: e.target.value }))}
+              >
+                <option value="">Select</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <button type="submit" disabled={savingPrefs}>Save</button>
+            <button type="button" onClick={() => setShowSettings(false)} disabled={savingPrefs}>Cancel</button>
+          </form>
+        </div>
       )}
     </div>
   )
