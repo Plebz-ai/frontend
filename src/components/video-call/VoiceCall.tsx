@@ -5,9 +5,10 @@ import React, { useEffect, useRef, useState } from 'react';
 interface VoiceCallProps {
   character: any;
   onClose: () => void;
+  userPreferences?: any; // Optionally pass user preferences
 }
 
-export default function VoiceCall({ character, onClose }: VoiceCallProps) {
+export default function VoiceCall({ character, onClose, userPreferences }: VoiceCallProps) {
   // State
   const [isConnected, setIsConnected] = useState(false);
   const [isCallStarted, setIsCallStarted] = useState(false);
@@ -18,6 +19,7 @@ export default function VoiceCall({ character, onClose }: VoiceCallProps) {
   const [showMicPrompt, setShowMicPrompt] = useState(true);
   const [isMicActive, setIsMicActive] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState<string>(userPreferences?.ttsVoice || 'predefined');
 
   // Audio pipeline refs
   const ttsAudioChunks = useRef<Uint8Array[]>([]);
@@ -92,7 +94,7 @@ export default function VoiceCall({ character, onClose }: VoiceCallProps) {
     ws.onopen = () => {
       setIsConnected(true);
       setStatus('Connected');
-      ws.send(JSON.stringify({ type: 'init', characterDetails: character }));
+      ws.send(JSON.stringify({ type: 'INIT', ttsVoice: selectedVoice, characterDetails: character }));
       startAudioStreaming();
     };
 
@@ -254,6 +256,21 @@ export default function VoiceCall({ character, onClose }: VoiceCallProps) {
             {lastAudioUrlRef.current && (
               <audio controls src={lastAudioUrlRef.current} className="w-full mt-2" />
             )}
+          </div>
+        )}
+        {!isCallStarted && (
+          <div className="voice-call-setup">
+            <label htmlFor="tts-voice-select">TTS Voice:</label>
+            <select
+              id="tts-voice-select"
+              value={selectedVoice}
+              onChange={e => setSelectedVoice(e.target.value)}
+              aria-label="TTS voice for call"
+            >
+              <option value="predefined">Predefined</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
           </div>
         )}
       </div>
