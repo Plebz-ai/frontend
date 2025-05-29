@@ -9,10 +9,11 @@ interface VideoCallProps {
   sessionId?: string;
   initialMessages?: any[];
   videoDisabled?: boolean;
+  userPreferences?: any; // Optionally pass user preferences
 }
 
 // --- Main Component ---
-export default function VideoCall({ character, onClose }: VideoCallProps) {
+export default function VideoCall({ character, onClose, sessionId, initialMessages, videoDisabled, userPreferences }: VideoCallProps) {
   // State
   const [isConnected, setIsConnected] = useState(false);
   const [isCallStarted, setIsCallStarted] = useState(false);
@@ -21,6 +22,7 @@ export default function VideoCall({ character, onClose }: VideoCallProps) {
   const [wsError, setWsError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Idle');
   const [showMicPrompt, setShowMicPrompt] = useState(true);
+  const [selectedVoice, setSelectedVoice] = useState<string>(userPreferences?.ttsVoice || 'predefined');
 
   // Audio pipeline refs
   const ttsAudioChunks = useRef<Uint8Array[]>([]);
@@ -35,15 +37,14 @@ export default function VideoCall({ character, onClose }: VideoCallProps) {
     setIsCallStarted(true);
     setStatus('Connecting...');
     // Open WebSocket and set up handlers
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/voice-session`;
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/video-session`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnected(true);
       setStatus('Connected');
-      // Send INIT message with character details
-      ws.send(JSON.stringify({ type: 'init', characterDetails: character }));
+      ws.send(JSON.stringify({ type: 'INIT', ttsVoice: selectedVoice, characterDetails: character }));
     };
 
     ws.onclose = () => {
@@ -194,6 +195,21 @@ export default function VideoCall({ character, onClose }: VideoCallProps) {
             {lastAudioUrlRef.current && (
               <audio controls src={lastAudioUrlRef.current} className="w-full mt-2" />
             )}
+          </div>
+        )}
+        {!isCallStarted && (
+          <div className="video-call-setup">
+            <label htmlFor="tts-voice-select">TTS Voice:</label>
+            <select
+              id="tts-voice-select"
+              value={selectedVoice}
+              onChange={e => setSelectedVoice(e.target.value)}
+              aria-label="TTS voice for call"
+            >
+              <option value="predefined">Predefined</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
           </div>
         )}
       </div>
