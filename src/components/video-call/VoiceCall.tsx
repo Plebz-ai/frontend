@@ -53,9 +53,14 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       
       // --- Browser Detection ---
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      if (isSafari) {
-        console.log('[VoiceCall] Safari browser detected. Using special handling.');
-      }
+      const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+      const isChrome = navigator.userAgent.toLowerCase().includes('chrome');
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      
+      console.log('[VoiceCall] Browser detection:', { 
+        isSafari, isFirefox, isChrome, isMobile, 
+        userAgent: navigator.userAgent 
+      });
       
       // --- Permissions API check ---
       if (navigator.permissions) {
@@ -73,10 +78,18 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           console.warn('[VoiceCall] Permissions API error:', permErr);
         }
       }
+      
       // --- getUserMedia ---
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { 
+            channelCount: 1, 
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true
+          } 
+        });
       } catch (err: any) {
         console.error('[VoiceCall] getUserMedia error:', err);
         if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
@@ -91,236 +104,190 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
         setShowMicPrompt(true);
         return;
       }
+      
       console.log('[VoiceCall] getUserMedia returned:', stream);
-      if (!(stream instanceof MediaStream)) {
-        setMicError('Browser did not return a valid MediaStream. Try a hard refresh (Ctrl+Shift+R) or use a different browser.');
+      console.log('[VoiceCall] MediaStream details:', { 
+        active: stream.active,
+        id: stream.id,
+        tracks: stream.getTracks().map(t => ({
+          kind: t.kind,
+          id: t.id,
+          label: t.label,
+          enabled: t.enabled,
+          readyState: t.readyState
+        }))
+      });
+      
+      if (!stream.active || !stream.getAudioTracks().length) {
+        setMicError('No active audio tracks found in MediaStream. Please check your mic and browser settings.');
         setIsMicActive(false);
         setIsStarting(false);
         setShowMicPrompt(true);
         return;
       }
-      // --- NEW: Check for audio tracks ---
-      if (!stream.getAudioTracks || !stream.getAudioTracks().length) {
-        setMicError('No audio tracks found in MediaStream. Please check your mic and browser settings, and ensure your mic is not in use by another app.');
-        setIsMicActive(false);
-        setIsStarting(false);
-        setShowMicPrompt(true);
-        return;
-      }
+      
       mediaStreamRef.current = stream;
-      
-      // Safari-specific AudioContext workaround
-      let audioContextOptions: AudioContextOptions | undefined = { sampleRate: 16000 };
-      if (isSafari) {
-        // Safari sometimes needs a more basic configuration
-        audioContextOptions = undefined; // Use default options in Safari
-        console.log('[VoiceCall] Using default AudioContext options for Safari');
-      }
-      
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)(audioContextOptions);
-      audioContextRef.current = audioContext;
-      let source: MediaStreamAudioSourceNode | null = null;
-      try {
-        // Explicitly log what we're passing to createMediaStreamSource
-        console.log('[VoiceCall] Creating MediaStreamSource with:', 
-          stream instanceof MediaStream ? 'Valid MediaStream' : 'Invalid MediaStream',
-          'tracks:', stream.getAudioTracks().length,
-          'active:', stream.active);
-          
-        source = audioContext.createMediaStreamSource(stream);
-        console.log('[VoiceCall] MediaStreamSource created successfully');
-      } catch (err: any) {
-        console.error('[VoiceCall] createMediaStreamSource error:', err);
-        if (err && err.message && err.message.includes("parameter 1 is not of type 'MediaStream'")) {
-          // Try a different approach for problematic browsers
-          try {
-            if (isSafari) {
-              // Special handling for Safari
-              console.log('[VoiceCall] Attempting Safari-specific workaround');
-              // Wait a moment before trying again
-              await new Promise(resolve => setTimeout(resolve, 500));
-              // Try again with current track
-              const audioTrack = stream.getAudioTracks()[0];
-              if (audioTrack) {
-                const newStream = new MediaStream([audioTrack]);
-                source = audioContext.createMediaStreamSource(newStream);
-                console.log('[VoiceCall] Safari workaround successful');
-              }
-            } else {
-              setMicError('Browser context error: Mic cannot be activated due to a browser bug. Please reload the page (Ctrl+Shift+R) or close and reopen the tab.');
-              setIsMicActive(false);
-              setIsStarting(false);
-              setShowMicPrompt(true);
-              return;
-            }
-          } catch (err2) {
-            console.error('[VoiceCall] Workaround also failed:', err2);
-            setMicError('Browser context error: Mic cannot be activated in this browser. Please try using Chrome or Firefox.');
-            setIsMicActive(false);
-            setIsStarting(false);
-            setShowMicPrompt(true);
-            return;
-          }
-        } else {
-          setMicError('Microphone access error: ' + (err && err.message ? err.message : 'Unknown error'));
-          setIsMicActive(false);
-          setIsStarting(false);
-          setShowMicPrompt(true);
-          return;
-        }
-      }
-      
-      if (!source) {
-        setMicError('Failed to create audio source. Please try using a different browser.');
-        setIsMicActive(false);
-        setIsStarting(false);
-        setShowMicPrompt(true);
-        return;
-      }
-      
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-      source.connect(processor);
-      processor.connect(audioContext.destination);
       setIsMicActive(true);
-
-      // --- VAD Integration ---
-      let vadCleanup = null;
-      let speechActive = false;
       
+      // --- DIRECT AUDIO PROCESSING IMPLEMENTATION ---
+      // This bypasses the problematic VAD library completely
+      
+      // Simple volume detection threshold
+      const VOLUME_THRESHOLD = 0.01;
+      let isSpeechDetected = false;
+      let silenceTimeout: NodeJS.Timeout | null = null;
+      
+      // Create audio analyzer
       try {
-        // Create a clone of the MediaStream to ensure it's a valid MediaStream object
-        const clonedStream = new MediaStream();
-        stream.getAudioTracks().forEach(track => {
-          clonedStream.addTrack(track.clone());
-        });
+        // Create a separate audio context just for analysis
+        const analyzerContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const analyzerSource = analyzerContext.createMediaStreamSource(stream);
+        const analyzerNode = analyzerContext.createAnalyser();
+        analyzerNode.fftSize = 256;
+        analyzerSource.connect(analyzerNode);
         
-        console.log('[VoiceCall][VAD] Created cloned MediaStream:', clonedStream instanceof MediaStream, 
-          'tracks:', clonedStream.getAudioTracks().length);
+        const dataArray = new Uint8Array(analyzerNode.frequencyBinCount);
         
-        const vadOptions = {
-          onSpeechStart: () => {
+        // Store cleanup function
+        const cleanup = () => {
+          if (silenceTimeout) clearTimeout(silenceTimeout);
+          try {
+            analyzerSource.disconnect();
+            analyzerContext.close().catch(err => {
+              console.error('[VoiceCall] Error closing analyzer context:', err);
+            });
+          } catch (err) {
+            console.error('[VoiceCall] Error in analyzer cleanup:', err);
+          }
+        };
+        
+        // Store for later cleanup
+        if (audioContextRef.current) {
+          (audioContextRef.current as any).__vadCleanup = cleanup;
+        }
+        
+        // Use analyzer to detect speech
+        const detectSpeech = () => {
+          if (!initSentRef.current) return;
+          
+          analyzerNode.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / dataArray.length / 255; // Normalize to 0-1
+          
+          // Detect speech start
+          if (average > VOLUME_THRESHOLD && !isSpeechDetected) {
+            isSpeechDetected = true;
             setIsSpeaking(true);
-            speechActive = true;
-            console.log('[VoiceCall][VAD] Speech started');
-            // --- Barge-in logic ---
+            console.log('[VoiceCall][SimpleVAD] Speech started, volume:', average.toFixed(3));
+            
+            // Handle barge-in
             if (isTTSPlaying && audioRef.current) {
               audioRef.current.pause();
               setIsTTSPlaying(false);
-              if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
+              if (wsRef.current && wsRef.current.readyState === 1) {
                 wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
-                console.log('[VoiceCall][VAD] Sent barge_in marker');
+                console.log('[VoiceCall][SimpleVAD] Sent barge_in marker');
               }
-              console.log('[VoiceCall][VAD] Barge-in: TTS playback stopped due to user speech');
             }
-          },
-          onSpeechEnd: () => {
-            setIsSpeaking(false);
-            speechActive = false;
-            console.log('[VoiceCall][VAD] Speech ended');
-            // Send end_of_utterance marker to backend
-            if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
-              wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
-              console.log('[VoiceCall][VAD] Sent end_of_utterance marker');
+            
+            // Clear any pending silence timeout
+            if (silenceTimeout) {
+              clearTimeout(silenceTimeout);
+              silenceTimeout = null;
             }
-          },
-          onVADMisfire: () => {},
-          onNoise: () => {},
-          source: clonedStream, // Use the cloned stream
-          voice_stop: 250, // ms of silence before triggering end
-          voice_start: 100, // ms of speech before triggering start
-          interval: 50,
-          debug: false,
+          } 
+          // Detect silence after speech
+          else if (average <= VOLUME_THRESHOLD && isSpeechDetected) {
+            // Only trigger end after sustained silence (500ms)
+            if (!silenceTimeout) {
+              silenceTimeout = setTimeout(() => {
+                isSpeechDetected = false;
+                setIsSpeaking(false);
+                console.log('[VoiceCall][SimpleVAD] Speech ended after silence');
+                
+                // Send end_of_utterance to backend
+                if (wsRef.current && wsRef.current.readyState === 1) {
+                  wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
+                  console.log('[VoiceCall][SimpleVAD] Sent end_of_utterance marker');
+                }
+                
+                silenceTimeout = null;
+              }, 500);
+            }
+          } 
+          // Reset silence timer if volume goes back up
+          else if (average > VOLUME_THRESHOLD && isSpeechDetected && silenceTimeout) {
+            clearTimeout(silenceTimeout);
+            silenceTimeout = null;
+          }
+          
+          // Schedule next analysis
+          requestAnimationFrame(detectSpeech);
         };
         
-        // Use the VAD function directly since we have the type definitions
-        try {
-          console.log('[VoiceCall][VAD] Initializing VAD with audioContext:', 
-            audioContext instanceof AudioContext);
-          vadCleanup = VAD(audioContext, vadOptions);
-          console.log('[VoiceCall][VAD] VAD initialized successfully');
-        } catch (vadErr: any) {
-          console.error('[VoiceCall][VAD] VAD initialization error:', vadErr);
-          // Fall back to a simple implementation without VAD
-          speechActive = true; // Always send audio
-          // Create a fake cleanup function
-          vadCleanup = () => { 
-            console.log('[VoiceCall][VAD] Fake VAD cleanup called'); 
-          };
-        }
-      } catch (streamErr: any) {
-        console.error('[VoiceCall][VAD] Stream preparation error:', streamErr);
-        // Continue without VAD
-        speechActive = true; // Always send audio
+        // Start speech detection loop
+        detectSpeech();
+        console.log('[VoiceCall][SimpleVAD] Started simple volume-based VAD');
+        
+      } catch (analyzerErr) {
+        console.error('[VoiceCall] Failed to setup audio analyzer:', analyzerErr);
+        // Continue without VAD - always send audio
+        isSpeechDetected = true;
       }
-
-      processor.onaudioprocess = (e) => {
-        if (!initSentRef.current) {
-          // Don't send audio until INIT is sent
-          return;
-        }
+      
+      // --- Setup PCM Audio Streaming ---
+      // This handles the actual sending of audio data to the backend
+      try {
+        const pcmContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        const pcmSource = pcmContext.createMediaStreamSource(stream);
+        const processor = pcmContext.createScriptProcessor(4096, 1, 1);
         
-        const input = e.inputBuffer.getChannelData(0);
+        processorRef.current = processor;
+        audioContextRef.current = pcmContext;
         
-        // If VAD failed, implement a simple volume-based speech detection
-        if (speechActive === true && vadCleanup && typeof vadCleanup === 'function' && vadCleanup.toString().includes('Fake VAD')) {
-          // Calculate audio volume (RMS)
-          let sum = 0;
+        processor.onaudioprocess = (e) => {
+          if (!initSentRef.current || !wsRef.current || wsRef.current.readyState !== 1) {
+            return;
+          }
+          
+          // Only send audio if speech is detected or we're using fallback mode
+          if (!isSpeechDetected) {
+            return;
+          }
+          
+          const input = e.inputBuffer.getChannelData(0);
+          
+          // Convert Float32Array [-1,1] to 16-bit PCM
+          const pcm = new Int16Array(input.length);
           for (let i = 0; i < input.length; i++) {
-            sum += input[i] * input[i];
+            let s = Math.max(-1, Math.min(1, input[i]));
+            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
-          const rms = Math.sqrt(sum / input.length);
           
-          // Threshold for speech detection (adjust as needed)
-          const SPEECH_THRESHOLD = 0.01;
-          const isSpeaking = rms > SPEECH_THRESHOLD;
-          
-          // Update UI if speech state changed
-          if (isSpeaking !== prevSpeakingRef.current) {
-            setIsSpeaking(isSpeaking);
-            prevSpeakingRef.current = isSpeaking;
-            
-            // If speech started and TTS is playing, implement barge-in
-            if (isSpeaking && isTTSPlaying && audioRef.current) {
-              audioRef.current.pause();
-              setIsTTSPlaying(false);
-              if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
-                wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
-                console.log('[VoiceCall][Fallback VAD] Sent barge_in marker');
-              }
-            }
-            
-            // If speech ended, send end_of_utterance
-            if (!isSpeaking && wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
-              wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
-              console.log('[VoiceCall][Fallback VAD] Sent end_of_utterance marker');
-            }
-          }
-        }
-        
-        if (!speechActive) {
-          // Only send audio when VAD says user is speaking
-          return;
-        }
-        
-        // Convert Float32Array [-1,1] to 16-bit PCM
-        const pcm = new Int16Array(input.length);
-        for (let i = 0; i < input.length; i++) {
-          let s = Math.max(-1, Math.min(1, input[i]));
-          pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        const pcmBytes = new Uint8Array(pcm.buffer);
-        if (wsRef.current && wsRef.current.readyState === 1) {
+          const pcmBytes = new Uint8Array(pcm.buffer);
           wsRef.current.send(pcmBytes);
+          
           if (pcmBytes.length > 0) {
             console.log(`[VoiceCall] [${new Date().toISOString()}] Sent ${pcmBytes.length} bytes of audio to orchestrator`);
           }
-        }
-      };
-      // Store cleanup for VAD
-      if (audioContextRef.current) {
-        (audioContextRef.current as any).__vadCleanup = vadCleanup;
+        };
+        
+        pcmSource.connect(processor);
+        processor.connect(pcmContext.destination);
+        
+        console.log('[VoiceCall] PCM audio streaming setup complete');
+        
+      } catch (pcmErr) {
+        console.error('[VoiceCall] Failed to setup PCM streaming:', pcmErr);
+        setMicError('Failed to setup audio processing. Please try a different browser.');
+        setIsMicActive(false);
       }
+      
     } catch (err: any) {
       console.error('[VoiceCall] Microphone access error:', err);
       setMicError('Microphone access denied or unavailable. ' + (err && err.message ? `Reason: ${err.message}` : ''));
@@ -331,25 +298,59 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   const stopAudioStreaming = () => {
     setIsMicActive(false);
     setIsSpeaking(false);
+    
+    // Clean up processor
     if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current.onaudioprocess = null;
-    }
-    if (audioContextRef.current) {
-      // Cleanup VAD
-      if ((audioContextRef.current as any).__vadCleanup) {
-        (audioContextRef.current as any).__vadCleanup();
+      try {
+        processorRef.current.disconnect();
+        processorRef.current.onaudioprocess = null;
+      } catch (err) {
+        console.error('[VoiceCall] Error disconnecting processor:', err);
       }
-      audioContextRef.current.close().catch(err => {
+    }
+    
+    // Clean up audio context
+    if (audioContextRef.current) {
+      // Run any cleanup function we stored
+      if ((audioContextRef.current as any).__vadCleanup) {
+        try {
+          (audioContextRef.current as any).__vadCleanup();
+        } catch (err) {
+          console.error('[VoiceCall] Error in VAD cleanup:', err);
+        }
+      }
+      
+      // Close the audio context
+      try {
+        audioContextRef.current.close().catch(err => {
+          console.error('[VoiceCall] Error closing AudioContext:', err);
+        });
+      } catch (err) {
         console.error('[VoiceCall] Error closing AudioContext:', err);
-      });
+      }
     }
+    
+    // Stop all media tracks
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      try {
+        mediaStreamRef.current.getTracks().forEach(track => {
+          try {
+            track.stop();
+          } catch (trackErr) {
+            console.error('[VoiceCall] Error stopping track:', trackErr);
+          }
+        });
+      } catch (streamErr) {
+        console.error('[VoiceCall] Error stopping MediaStream tracks:', streamErr);
+      }
     }
+    
+    // Reset refs
     processorRef.current = null;
     audioContextRef.current = null;
     mediaStreamRef.current = null;
+    
+    console.log('[VoiceCall] Audio streaming stopped');
   };
 
   // --- Start Call Handler ---
