@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import VAD from 'voice-activity-detection';
 
+// Remove the inline type definitions since we now have them in the declaration file
 interface VoiceCallProps {
   character: any;
   onClose: () => void;
@@ -61,6 +62,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           }
         } catch (permErr) {
           // Permissions API not supported or failed, continue
+          console.warn('[VoiceCall] Permissions API error:', permErr);
         }
       }
       // --- getUserMedia ---
@@ -164,7 +166,8 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
         interval: 50,
         debug: false,
       };
-      // @ts-ignore
+      
+      // Use the VAD function directly since we have the type definitions
       vadCleanup = VAD(audioContext, vadOptions);
 
       processor.onaudioprocess = (e) => {
@@ -192,8 +195,9 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
         }
       };
       // Store cleanup for VAD
-      // @ts-ignore
-      (audioContextRef.current as any).__vadCleanup = vadCleanup;
+      if (audioContextRef.current) {
+        (audioContextRef.current as any).__vadCleanup = vadCleanup;
+      }
     } catch (err: any) {
       console.error('[VoiceCall] Microphone access error:', err);
       setMicError('Microphone access denied or unavailable. ' + (err && err.message ? `Reason: ${err.message}` : ''));
@@ -210,12 +214,12 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
     }
     if (audioContextRef.current) {
       // Cleanup VAD
-      // @ts-ignore
       if ((audioContextRef.current as any).__vadCleanup) {
-        // @ts-ignore
         (audioContextRef.current as any).__vadCleanup();
       }
-      audioContextRef.current.close();
+      audioContextRef.current.close().catch(err => {
+        console.error('[VoiceCall] Error closing AudioContext:', err);
+      });
     }
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
