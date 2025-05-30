@@ -36,6 +36,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const prevSpeakingRef = useRef<boolean>(false);
 
   const initSentRef = useRef(false);
   const audioStreamingStartedRef = useRef(false);
@@ -49,6 +50,13 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
     audioStreamingStartedRef.current = true;
     try {
       setMicError(null);
+      
+      // --- Browser Detection ---
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      if (isSafari) {
+        console.log('[VoiceCall] Safari browser detected. Using special handling.');
+      }
+      
       // --- Permissions API check ---
       if (navigator.permissions) {
         try {
@@ -100,21 +108,59 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
         return;
       }
       mediaStreamRef.current = stream;
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      
+      // Safari-specific AudioContext workaround
+      let audioContextOptions: AudioContextOptions | undefined = { sampleRate: 16000 };
+      if (isSafari) {
+        // Safari sometimes needs a more basic configuration
+        audioContextOptions = undefined; // Use default options in Safari
+        console.log('[VoiceCall] Using default AudioContext options for Safari');
+      }
+      
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)(audioContextOptions);
       audioContextRef.current = audioContext;
       let source: MediaStreamAudioSourceNode | null = null;
       try {
+        // Explicitly log what we're passing to createMediaStreamSource
+        console.log('[VoiceCall] Creating MediaStreamSource with:', 
+          stream instanceof MediaStream ? 'Valid MediaStream' : 'Invalid MediaStream',
+          'tracks:', stream.getAudioTracks().length,
+          'active:', stream.active);
+          
         source = audioContext.createMediaStreamSource(stream);
+        console.log('[VoiceCall] MediaStreamSource created successfully');
       } catch (err: any) {
         console.error('[VoiceCall] createMediaStreamSource error:', err);
         if (err && err.message && err.message.includes("parameter 1 is not of type 'MediaStream'")) {
-          setMicError('Browser context error: Mic cannot be activated due to a browser bug. Please reload the page (Ctrl+Shift+R) or close and reopen the tab.');
-          setIsMicActive(false);
-          setIsStarting(false);
-          setShowMicPrompt(true);
-          // Optionally, auto-reload:
-          // window.location.reload();
-          return;
+          // Try a different approach for problematic browsers
+          try {
+            if (isSafari) {
+              // Special handling for Safari
+              console.log('[VoiceCall] Attempting Safari-specific workaround');
+              // Wait a moment before trying again
+              await new Promise(resolve => setTimeout(resolve, 500));
+              // Try again with current track
+              const audioTrack = stream.getAudioTracks()[0];
+              if (audioTrack) {
+                const newStream = new MediaStream([audioTrack]);
+                source = audioContext.createMediaStreamSource(newStream);
+                console.log('[VoiceCall] Safari workaround successful');
+              }
+            } else {
+              setMicError('Browser context error: Mic cannot be activated due to a browser bug. Please reload the page (Ctrl+Shift+R) or close and reopen the tab.');
+              setIsMicActive(false);
+              setIsStarting(false);
+              setShowMicPrompt(true);
+              return;
+            }
+          } catch (err2) {
+            console.error('[VoiceCall] Workaround also failed:', err2);
+            setMicError('Browser context error: Mic cannot be activated in this browser. Please try using Chrome or Firefox.');
+            setIsMicActive(false);
+            setIsStarting(false);
+            setShowMicPrompt(true);
+            return;
+          }
         } else {
           setMicError('Microphone access error: ' + (err && err.message ? err.message : 'Unknown error'));
           setIsMicActive(false);
@@ -123,6 +169,15 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           return;
         }
       }
+      
+      if (!source) {
+        setMicError('Failed to create audio source. Please try using a different browser.');
+        setIsMicActive(false);
+        setIsStarting(false);
+        setShowMicPrompt(true);
+        return;
+      }
+      
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
       source.connect(processor);
@@ -132,54 +187,122 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       // --- VAD Integration ---
       let vadCleanup = null;
       let speechActive = false;
-      const vadOptions = {
-        onSpeechStart: () => {
-          setIsSpeaking(true);
-          speechActive = true;
-          console.log('[VoiceCall][VAD] Speech started');
-          // --- Barge-in logic ---
-          if (isTTSPlaying && audioRef.current) {
-            audioRef.current.pause();
-            setIsTTSPlaying(false);
-            if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
-              wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
-              console.log('[VoiceCall][VAD] Sent barge_in marker');
-            }
-            console.log('[VoiceCall][VAD] Barge-in: TTS playback stopped due to user speech');
-          }
-        },
-        onSpeechEnd: () => {
-          setIsSpeaking(false);
-          speechActive = false;
-          console.log('[VoiceCall][VAD] Speech ended');
-          // Send end_of_utterance marker to backend
-          if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
-            wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
-            console.log('[VoiceCall][VAD] Sent end_of_utterance marker');
-          }
-        },
-        onVADMisfire: () => {},
-        onNoise: () => {},
-        source: stream,
-        voice_stop: 250, // ms of silence before triggering end
-        voice_start: 100, // ms of speech before triggering start
-        interval: 50,
-        debug: false,
-      };
       
-      // Use the VAD function directly since we have the type definitions
-      vadCleanup = VAD(audioContext, vadOptions);
+      try {
+        // Create a clone of the MediaStream to ensure it's a valid MediaStream object
+        const clonedStream = new MediaStream();
+        stream.getAudioTracks().forEach(track => {
+          clonedStream.addTrack(track.clone());
+        });
+        
+        console.log('[VoiceCall][VAD] Created cloned MediaStream:', clonedStream instanceof MediaStream, 
+          'tracks:', clonedStream.getAudioTracks().length);
+        
+        const vadOptions = {
+          onSpeechStart: () => {
+            setIsSpeaking(true);
+            speechActive = true;
+            console.log('[VoiceCall][VAD] Speech started');
+            // --- Barge-in logic ---
+            if (isTTSPlaying && audioRef.current) {
+              audioRef.current.pause();
+              setIsTTSPlaying(false);
+              if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
+                wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
+                console.log('[VoiceCall][VAD] Sent barge_in marker');
+              }
+              console.log('[VoiceCall][VAD] Barge-in: TTS playback stopped due to user speech');
+            }
+          },
+          onSpeechEnd: () => {
+            setIsSpeaking(false);
+            speechActive = false;
+            console.log('[VoiceCall][VAD] Speech ended');
+            // Send end_of_utterance marker to backend
+            if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
+              wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
+              console.log('[VoiceCall][VAD] Sent end_of_utterance marker');
+            }
+          },
+          onVADMisfire: () => {},
+          onNoise: () => {},
+          source: clonedStream, // Use the cloned stream
+          voice_stop: 250, // ms of silence before triggering end
+          voice_start: 100, // ms of speech before triggering start
+          interval: 50,
+          debug: false,
+        };
+        
+        // Use the VAD function directly since we have the type definitions
+        try {
+          console.log('[VoiceCall][VAD] Initializing VAD with audioContext:', 
+            audioContext instanceof AudioContext);
+          vadCleanup = VAD(audioContext, vadOptions);
+          console.log('[VoiceCall][VAD] VAD initialized successfully');
+        } catch (vadErr: any) {
+          console.error('[VoiceCall][VAD] VAD initialization error:', vadErr);
+          // Fall back to a simple implementation without VAD
+          speechActive = true; // Always send audio
+          // Create a fake cleanup function
+          vadCleanup = () => { 
+            console.log('[VoiceCall][VAD] Fake VAD cleanup called'); 
+          };
+        }
+      } catch (streamErr: any) {
+        console.error('[VoiceCall][VAD] Stream preparation error:', streamErr);
+        // Continue without VAD
+        speechActive = true; // Always send audio
+      }
 
       processor.onaudioprocess = (e) => {
         if (!initSentRef.current) {
           // Don't send audio until INIT is sent
           return;
         }
+        
+        const input = e.inputBuffer.getChannelData(0);
+        
+        // If VAD failed, implement a simple volume-based speech detection
+        if (speechActive === true && vadCleanup && typeof vadCleanup === 'function' && vadCleanup.toString().includes('Fake VAD')) {
+          // Calculate audio volume (RMS)
+          let sum = 0;
+          for (let i = 0; i < input.length; i++) {
+            sum += input[i] * input[i];
+          }
+          const rms = Math.sqrt(sum / input.length);
+          
+          // Threshold for speech detection (adjust as needed)
+          const SPEECH_THRESHOLD = 0.01;
+          const isSpeaking = rms > SPEECH_THRESHOLD;
+          
+          // Update UI if speech state changed
+          if (isSpeaking !== prevSpeakingRef.current) {
+            setIsSpeaking(isSpeaking);
+            prevSpeakingRef.current = isSpeaking;
+            
+            // If speech started and TTS is playing, implement barge-in
+            if (isSpeaking && isTTSPlaying && audioRef.current) {
+              audioRef.current.pause();
+              setIsTTSPlaying(false);
+              if (wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
+                wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
+                console.log('[VoiceCall][Fallback VAD] Sent barge_in marker');
+              }
+            }
+            
+            // If speech ended, send end_of_utterance
+            if (!isSpeaking && wsRef.current && wsRef.current.readyState === 1 && initSentRef.current) {
+              wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
+              console.log('[VoiceCall][Fallback VAD] Sent end_of_utterance marker');
+            }
+          }
+        }
+        
         if (!speechActive) {
           // Only send audio when VAD says user is speaking
           return;
         }
-        const input = e.inputBuffer.getChannelData(0);
+        
         // Convert Float32Array [-1,1] to 16-bit PCM
         const pcm = new Int16Array(input.length);
         for (let i = 0; i < input.length; i++) {
