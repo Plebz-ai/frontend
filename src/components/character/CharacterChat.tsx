@@ -255,21 +255,22 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
     }
   }
 
-  useEffect(() => {
-    // Fetch persistent chat history from backend
-    const fetchHistory = async () => {
-      try {
-        const res = await axios.get(`/api/v1/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=${MAX_DISPLAY_MESSAGES}`);
-        if (res.data && Array.isArray(res.data.messages)) {
-          setMessages(res.data.messages);
-          setHasMoreHistory(res.data.count > MAX_DISPLAY_MESSAGES);
-        }
-      } catch (err) {
-        console.error('Failed to fetch chat history:', err);
-      }
-    };
-    fetchHistory();
-  }, [character.id, onSessionIdChange]);
+  // Remove or comment out the code that fetches from /api/v1/messages
+  // useEffect(() => {
+  //   // Fetch persistent chat history from backend
+  //   const fetchHistory = async () => {
+  //     try {
+  //       const res = await axios.get(`/api/v1/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=${MAX_DISPLAY_MESSAGES}`);
+  //       if (res.data && Array.isArray(res.data.messages)) {
+  //         setMessages(res.data.messages);
+  //         setHasMoreHistory(res.data.count > MAX_DISPLAY_MESSAGES);
+  //       }
+  //     } catch (err) {
+  //       console.error('Failed to fetch chat history:', err);
+  //     }
+  //   };
+  //   fetchHistory();
+  // }, [character.id, onSessionIdChange]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();

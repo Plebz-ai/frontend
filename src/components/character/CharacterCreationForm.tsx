@@ -166,8 +166,8 @@ export default function CharacterCreationForm() {
   const limits = {
     name: 20,
     tagline: 50,
-    description: 500,
-    greeting: 2048,
+    description: 10000,
+    greeting: 8000,
     personality: 100
   }
 

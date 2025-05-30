@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import VAD from 'voice-activity-detection';
+import axios from 'axios';
+import { useWakeWord } from '../../hooks/useWakeWord';
 
 // Remove the inline type definitions since we now have them in the declaration file
 interface VoiceCallProps {
@@ -13,7 +15,6 @@ interface VoiceCallProps {
 export default function VoiceCall({ character, onClose, userPreferences }: VoiceCallProps) {
   // State
   const [isConnected, setIsConnected] = useState(false);
-  const [isCallStarted, setIsCallStarted] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [isTTSPlaying, setIsTTSPlaying] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
@@ -22,10 +23,16 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   const [isMicActive, setIsMicActive] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<string>(userPreferences?.ttsVoice || 'predefined');
-  const [isStarting, setIsStarting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [llm2StreamingText, setLlm2StreamingText] = useState<string>("");
   const [llm2FinalText, setLlm2FinalText] = useState<string>("");
+  const [history, setHistory] = useState<{role: string, text: string}[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'idle' | 'pitch' | 'qna'>('idle');
+  const [isPitchTTSLoading, setIsPitchTTSLoading] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState<string>(character?.system_prompt || "");
+  const [greetingScript, setGreetingScript] = useState<string>(character?.greeting_script || "");
+  const [vadEnabled, setVadEnabled] = useState<boolean>(true);
 
   // Audio pipeline refs
   const ttsAudioChunks = useRef<Uint8Array[]>([]);
@@ -40,6 +47,157 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
 
   const initSentRef = useRef(false);
   const audioStreamingStartedRef = useRef(false);
+
+  const pitchAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Wake word detection
+  const {
+    isReady: isWakeWordReady,
+    isListening: isWakeWordListening,
+    error: wakeWordError,
+    start: startWakeWord,
+    stop: stopWakeWord,
+  } = useWakeWord({
+    accessKey: 'spQfPKZkZaqo7WmnOc5B9qCSNbjIiX8RdnOUKleYH8q/nLMrN8obcQ==',
+    onWakeWord: () => {
+      setMode('pitch');
+      setStatus('Sia detected! Pitch starting...');
+    },
+    label: 'Sia',
+    autoStart: true,
+  });
+
+  // Add this ref and constant at the top of the component (inside VoiceCall)
+  const speechStartTimeRef = useRef<number | null>(null);
+  const MIN_UTTERANCE_DURATION = 1.0; // seconds
+
+  const handleStartCall = async () => {
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/voice-session`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      ws.send(JSON.stringify({
+        type: 'init',
+        characterDetails: {
+          ...character,
+          ttsVoice: selectedVoice,
+          system_prompt: systemPrompt,
+          greeting_script: greetingScript,
+          vad_enabled: vadEnabled,
+        }
+      }));
+      initSentRef.current = true;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'tts_mime_type') {
+          ttsMimeTypeRef.current = data.mime_type;
+          console.log('[VoiceCall][TTS] Received MIME type:', data.mime_type);
+        } else if (data.type === 'tts_chunk') {
+          try {
+            const bytes = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
+            ttsAudioChunks.current.push(bytes);
+            console.log('[VoiceCall][TTS] Received tts_chunk, decoded size:', bytes.length);
+          } catch (err) {
+            setTtsError('Failed to decode audio chunk');
+            console.error('[VoiceCall][TTS] Failed to decode tts_chunk:', err);
+          }
+        } else if (data.type === 'tts_end') {
+          if (ttsAudioChunks.current.length === 0) {
+            setTtsError('No audio received');
+            console.error('[VoiceCall][TTS] No audio received at tts_end');
+            return;
+          }
+          const totalLength = ttsAudioChunks.current.reduce((acc, b) => acc + b.length, 0);
+          const merged = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const chunk of ttsAudioChunks.current) {
+            merged.set(chunk, offset);
+            offset += chunk.length;
+          }
+          ttsAudioChunks.current = [];
+          if (audioRef.current) {
+            audioRef.current.pause();
+            if (lastAudioUrlRef.current && audioRef.current.src.startsWith('blob:')) {
+              URL.revokeObjectURL(audioRef.current.src);
+            }
+          }
+          const blob = new Blob([merged], { type: ttsMimeTypeRef.current || 'audio/wav' });
+          const url = URL.createObjectURL(blob);
+          lastAudioUrlRef.current = url;
+          audioRef.current = new Audio(url);
+          console.log('[VoiceCall][TTS] Starting playback, total audio size:', merged.length, 'MIME:', ttsMimeTypeRef.current || 'audio/wav');
+          audioRef.current.onended = () => {
+            URL.revokeObjectURL(url);
+            setIsTTSPlaying(false);
+            console.log('[VoiceCall][TTS] Playback ended');
+            // Only start audio streaming after greeting playback is fully finished
+            if (!audioStreamingStartedRef.current) {
+              startAudioStreaming();
+              console.log('[VoiceCall] Audio streaming started after greeting playback ended');
+            }
+          };
+          audioRef.current.onerror = (e) => {
+            setTtsError('Playback failed');
+            setIsTTSPlaying(false);
+            URL.revokeObjectURL(url);
+            console.error('[VoiceCall][TTS] Playback failed', e);
+          };
+          setIsTTSPlaying(true);
+          audioRef.current.play().then(() => {
+            console.log('[VoiceCall][TTS] Playback started, duration:', audioRef.current?.duration);
+          }).catch(err => {
+            setTtsError('Playback failed');
+            setIsTTSPlaying(false);
+            URL.revokeObjectURL(url);
+            console.error('[VoiceCall][TTS] Playback failed (promise)', err);
+          });
+        } else if (data.type === 'greeting') {
+          setStatus('Call started');
+        } else if (data.type === 'error') {
+          setTtsError(data.error || 'TTS error');
+          console.error('[VoiceCall][TTS] Error:', data.error);
+        } else if (data.type === 'llm2_partial') {
+          setLlm2StreamingText(data.text || "");
+        } else if (data.type === 'llm2_final') {
+          setLlm2FinalText(data.text || "");
+          setLlm2StreamingText("");
+          setHistory(prev => [...prev, { role: 'assistant', text: data.text || "" }]);
+        } else if (data.type === 'transcript_final') {
+          setHistory(prev => [...prev, { role: 'user', text: data.text || "" }]);
+        }
+      } catch (err) {
+        setTtsError('Malformed message from backend');
+        console.error('[VoiceCall][TTS] Malformed message from backend:', err);
+      }
+    };
+
+    ws.onerror = (e) => {
+      setWsError('WebSocket error');
+      setStatus('Error');
+      stopAudioStreaming();
+      setIsTTSPlaying(false);
+      console.error('[VoiceCall][WS] WebSocket error:', e);
+    };
+    ws.onclose = () => {
+      setIsConnected(false);
+      setStatus('Disconnected');
+      stopAudioStreaming();
+      setIsTTSPlaying(false);
+      console.log('[VoiceCall][WS] WebSocket closed');
+    };
+  };
+
+  // Only allow VAD/audio streaming in Q&A mode
+  useEffect(() => {
+    if (mode !== 'qna') {
+      stopAudioStreaming();
+    }
+  }, [mode]);
 
   // --- Audio Streaming Logic ---
   const startAudioStreaming = async () => {
@@ -69,7 +227,6 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           if (perm.state === 'denied') {
             setMicError('Microphone access is denied in your browser settings. Please allow mic access (click the lock icon in the address bar).');
             setIsMicActive(false);
-            setIsStarting(false);
             setShowMicPrompt(true);
             return;
           }
@@ -100,7 +257,6 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           setMicError('Microphone access denied or unavailable. ' + (err && err.message ? `Reason: ${err.message}` : ''));
         }
         setIsMicActive(false);
-        setIsStarting(false);
         setShowMicPrompt(true);
         return;
       }
@@ -121,14 +277,13 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       if (!stream.active || !stream.getAudioTracks().length) {
         setMicError('No active audio tracks found in MediaStream. Please check your mic and browser settings.');
         setIsMicActive(false);
-        setIsStarting(false);
         setShowMicPrompt(true);
         return;
       }
       
       mediaStreamRef.current = stream;
       setIsMicActive(true);
-      
+
       // --- DIRECT AUDIO PROCESSING IMPLEMENTATION ---
       // This bypasses the problematic VAD library completely
       
@@ -183,6 +338,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           if (average > VOLUME_THRESHOLD && !isSpeechDetected) {
             isSpeechDetected = true;
             setIsSpeaking(true);
+            speechStartTimeRef.current = Date.now();
             console.log('[VoiceCall][SimpleVAD] Speech started, volume:', average.toFixed(3));
             
             // Handle barge-in
@@ -208,14 +364,21 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
               silenceTimeout = setTimeout(() => {
                 isSpeechDetected = false;
                 setIsSpeaking(false);
-                console.log('[VoiceCall][SimpleVAD] Speech ended after silence');
-                
-                // Send end_of_utterance to backend
-                if (wsRef.current && wsRef.current.readyState === 1) {
-                  wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
-                  console.log('[VoiceCall][SimpleVAD] Sent end_of_utterance marker');
+                const speechEndTime = Date.now();
+                const durationSec = speechStartTimeRef.current
+                  ? (speechEndTime - speechStartTimeRef.current) / 1000
+                  : 0;
+                speechStartTimeRef.current = null;
+                if (durationSec >= MIN_UTTERANCE_DURATION) {
+                  // Only send if long enough
+                  if (wsRef.current && wsRef.current.readyState === 1) {
+                    wsRef.current.send(JSON.stringify({ type: 'end_of_utterance' }));
+                    console.log(`[VoiceCall][SimpleVAD] Sent end_of_utterance marker (duration: ${durationSec.toFixed(2)}s)`);
+                  }
+                } else {
+                  // Ignore short noises
+                  console.log(`[VoiceCall][SimpleVAD] Ignored short utterance (${durationSec.toFixed(2)}s)`);
                 }
-                
                 silenceTimeout = null;
               }, 500);
             }
@@ -257,19 +420,19 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           
           // Only send audio if speech is detected or we're using fallback mode
           if (!isSpeechDetected) {
-            return;
-          }
+          return;
+        }
           
           const input = e.inputBuffer.getChannelData(0);
+        
+        // Convert Float32Array [-1,1] to 16-bit PCM
+        const pcm = new Int16Array(input.length);
+        for (let i = 0; i < input.length; i++) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
           
-          // Convert Float32Array [-1,1] to 16-bit PCM
-          const pcm = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++) {
-            let s = Math.max(-1, Math.min(1, input[i]));
-            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
-          
-          const pcmBytes = new Uint8Array(pcm.buffer);
+        const pcmBytes = new Uint8Array(pcm.buffer);
           wsRef.current.send(pcmBytes);
           
           if (pcmBytes.length > 0) {
@@ -302,8 +465,8 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
     // Clean up processor
     if (processorRef.current) {
       try {
-        processorRef.current.disconnect();
-        processorRef.current.onaudioprocess = null;
+      processorRef.current.disconnect();
+      processorRef.current.onaudioprocess = null;
       } catch (err) {
         console.error('[VoiceCall] Error disconnecting processor:', err);
       }
@@ -314,7 +477,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       // Run any cleanup function we stored
       if ((audioContextRef.current as any).__vadCleanup) {
         try {
-          (audioContextRef.current as any).__vadCleanup();
+        (audioContextRef.current as any).__vadCleanup();
         } catch (err) {
           console.error('[VoiceCall] Error in VAD cleanup:', err);
         }
@@ -322,7 +485,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       
       // Close the audio context
       try {
-        audioContextRef.current.close().catch(err => {
+      audioContextRef.current.close().catch(err => {
           console.error('[VoiceCall] Error closing AudioContext:', err);
         });
       } catch (err) {
@@ -353,178 +516,25 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
     console.log('[VoiceCall] Audio streaming stopped');
   };
 
-  // --- Start Call Handler ---
-  const handleStartCall = async () => {
-    if (isCallStarted || isStarting || (wsRef.current && (wsRef.current.readyState === 0 || wsRef.current.readyState === 1))) {
-      console.warn('[VoiceCall] Start call ignored: already started or connecting');
-      return; // Prevent double start
-    }
-    setIsStarting(true);
-    setShowMicPrompt(false);
-    setTtsError(null);
-    setWsError(null);
-    setMicError(null);
-
-    // 1. Prompt for mic access first
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
-      console.log('[VoiceCall] getUserMedia returned:', stream);
-      if (!(stream instanceof MediaStream)) {
-        setMicError('Browser did not return a valid MediaStream. Try reloading or using a different browser.');
-        setIsMicActive(false);
-        setIsStarting(false);
-        setShowMicPrompt(true);
-        return;
-      }
-      mediaStreamRef.current = stream;
-      setIsMicActive(true);
-    } catch (err: any) {
-      console.error('[VoiceCall] Microphone access error:', err);
-      setMicError('Microphone access denied or unavailable. ' + (err && err.message ? `Reason: ${err.message}` : ''));
-      setIsMicActive(false);
-      setIsStarting(false);
-      setShowMicPrompt(true);
-      return;
-    }
-
-    // 2. Only proceed if mic access granted
-    setIsCallStarted(true);
-    setStatus('Connecting...');
-    console.log('[VoiceCall] Opening WebSocket connection...');
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/voice-session`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      console.log('[VoiceCall] Connected successfully');
-      setIsConnected(true);
-      setStatus('Connected');
-      if (!initSentRef.current) {
-        ws.send(JSON.stringify({ type: 'init', characterDetails: { ...character, ttsVoice: selectedVoice } }));
-        initSentRef.current = true;
-        console.log(`[VoiceCall] [${new Date().toISOString()}] INIT message sent`);
-      } else {
-        console.warn('[VoiceCall] INIT message already sent, skipping');
-      }
-      setIsStarting(false);
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      setStatus('Disconnected');
-      stopAudioStreaming();
-      setIsStarting(false);
-    };
-
-    ws.onerror = (e) => {
-      setWsError('WebSocket error');
-      setStatus('Error');
-      stopAudioStreaming();
-      setIsStarting(false);
-    };
-
-    ws.onmessage = (event) => {
+  // --- Fetch history on mount or sessionId change ---
+  useEffect(() => {
+    const fetchHistory = async (sid: string) => {
       try {
-        const data = JSON.parse(event.data);
-        console.log('[VoiceCall] WebSocket message received:', data);
-
-        if (data.type === 'tts_mime_type') {
-          ttsMimeTypeRef.current = data.mime_type;
-        } else if (data.type === 'tts_chunk') {
-          try {
-            const bytes = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
-            ttsAudioChunks.current.push(bytes);
-          } catch (err) {
-            setTtsError('Failed to decode audio chunk');
-          }
-        } else if (data.type === 'tts_end') {
-          if (ttsAudioChunks.current.length === 0) {
-            setTtsError('No audio received');
-            return;
-          }
-          const totalLength = ttsAudioChunks.current.reduce((acc, b) => acc + b.length, 0);
-          const merged = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of ttsAudioChunks.current) {
-            merged.set(chunk, offset);
-            offset += chunk.length;
-          }
-          ttsAudioChunks.current = [];
-
-          if (audioRef.current) {
-            audioRef.current.pause();
-            if (lastAudioUrlRef.current && audioRef.current.src.startsWith('blob:')) {
-              URL.revokeObjectURL(audioRef.current.src);
-            }
-          }
-
-          const blob = new Blob([merged], { type: ttsMimeTypeRef.current || 'audio/wav' });
-          const url = URL.createObjectURL(blob);
-          lastAudioUrlRef.current = url;
-
-          audioRef.current = new Audio(url);
-          audioRef.current.onended = () => {
-            URL.revokeObjectURL(url);
-            setIsTTSPlaying(false);
-          };
-          audioRef.current.onerror = (e) => {
-            setTtsError('Playback failed');
-            setIsTTSPlaying(false);
-            URL.revokeObjectURL(url);
-          };
-          setIsTTSPlaying(true);
-          audioRef.current.play().catch(err => {
-            setTtsError('Playback failed');
-            setIsTTSPlaying(false);
-            URL.revokeObjectURL(url);
-          });
-        } else if (data.type === 'greeting') {
-          setStatus('Call started');
-          if (!audioStreamingStartedRef.current) {
-            startAudioStreaming();
-            console.log('[VoiceCall] Audio streaming started after greeting');
-          }
-        } else if (data.type === 'error') {
-          setTtsError(data.error || 'TTS error');
-        } else if (data.type === 'llm2_partial') {
-          setLlm2StreamingText(data.text || "");
-        } else if (data.type === 'llm2_final') {
-          setLlm2FinalText(data.text || "");
-          setLlm2StreamingText("");
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8010';
+        const res = await axios.get(`${backendUrl}/ws/history/${sid}`);
+        if (res.data && Array.isArray(res.data.history)) {
+          setHistory(res.data.history);
         }
       } catch (err) {
-        setTtsError('Malformed message from backend');
+        console.warn('[VoiceCall] Could not fetch history:', err);
       }
     };
-  };
-
-  // --- End Call Handler ---
-  const handleEndCall = () => {
-    setIsCallStarted(false);
-    setIsConnected(false);
-    setStatus('Idle');
-    setShowMicPrompt(true);
-    stopAudioStreaming();
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+    const storedSessionId = localStorage.getItem('voice_session_id');
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+      fetchHistory(storedSessionId);
     }
-    if (audioRef.current) {
-      audioRef.current.pause();
-      if (lastAudioUrlRef.current) {
-        URL.revokeObjectURL(lastAudioUrlRef.current);
-      }
-    }
-    ttsAudioChunks.current = [];
-    ttsMimeTypeRef.current = null;
-    setTtsError(null);
-    setWsError(null);
-    setIsTTSPlaying(false);
-    setMicError(null);
-    audioStreamingStartedRef.current = false;
-    initSentRef.current = false;
-    onClose();
-  };
+  }, []);
 
   // --- Cleanup on Unmount ---
   useEffect(() => {
@@ -549,6 +559,35 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       <div className="bg-gray-800 rounded-lg shadow-lg p-8 w-full max-w-xl">
         <h2 className="text-2xl font-bold mb-4">Voice Call</h2>
         <div className="mb-2">Status: <span className={isConnected ? 'text-green-400' : 'text-red-400'}>{status}</span></div>
+        <div className="mb-2">Mode: <span className="text-yellow-400">{mode.toUpperCase()}</span></div>
+        {showMicPrompt && (
+          <div className="flex flex-col items-center mb-4">
+            <button
+              onClick={handleStartCall}
+              className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 transition text-lg flex items-center gap-2 shadow-lg"
+              aria-label="Start Voice Call"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75v1.5m0 0a6.75 6.75 0 01-6.75-6.75v-3A6.75 6.75 0 0112 3.75a6.75 6.75 0 016.75 6.75v3a6.75 6.75 0 01-6.75 6.75zm0 0v-1.5" />
+              </svg>
+              <span>Start Call</span>
+            </button>
+            <div className="mt-2 text-gray-400 text-sm">Click the mic to start the call</div>
+          </div>
+        )}
+        {/* Conversation History */}
+        <div className="mb-4 bg-gray-700 rounded p-3 max-h-48 overflow-y-auto">
+          <div className="font-bold text-gray-300 mb-2">Conversation History</div>
+          {history.length === 0 ? (
+            <div className="text-gray-400">No history yet.</div>
+          ) : (
+            history.map((item, idx) => (
+              <div key={idx} className={item.role === 'user' ? 'text-blue-300' : 'text-green-300'}>
+                <span className="font-mono text-xs">[{item.role}]</span> {item.text}
+              </div>
+            ))
+          )}
+        </div>
         {ttsError && <div className="text-red-500 mb-2">{ttsError}</div>}
         {wsError && <div className="text-red-500 mb-2">{wsError}</div>}
         {micError && (
@@ -575,26 +614,10 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
             </button>
           </div>
         )}
-        {showMicPrompt && (
+        {isConnected && (
           <div className="flex flex-col items-center mb-4">
             <button
-              onClick={handleStartCall}
-              className="px-6 py-3 bg-green-600 rounded-full hover:bg-green-700 transition text-lg flex items-center gap-2 shadow-lg"
-              aria-label="Start Voice Call"
-              disabled={isCallStarted || isStarting}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75v1.5m0 0a6.75 6.75 0 01-6.75-6.75v-3A6.75 6.75 0 0112 3.75a6.75 6.75 0 016.75 6.75v3a6.75 6.75 0 01-6.75 6.75zm0 0v-1.5" />
-              </svg>
-              <span>Start Call</span>
-            </button>
-            <div className="mt-2 text-gray-400 text-sm">Click the mic to start the call</div>
-          </div>
-        )}
-        {isCallStarted && (
-          <div className="flex flex-col items-center mb-4">
-            <button
-              onClick={handleEndCall}
+              onClick={stopAudioStreaming}
               className="px-4 py-2 bg-red-600 rounded hover:bg-red-700 transition"
             >
               End Call
@@ -611,7 +634,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
             )}
           </div>
         )}
-        {!isCallStarted && (
+        {!isConnected && (
           <div className="voice-call-setup">
             <label htmlFor="tts-voice-select">TTS Voice:</label>
             <select
@@ -626,7 +649,7 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
             </select>
           </div>
         )}
-        {isCallStarted && (
+        {isConnected && (
           <div className="mt-4 w-full">
             <div className="bg-gray-700 rounded p-4 min-h-[48px] font-mono text-base whitespace-pre-line">
               {llm2StreamingText ? (
@@ -637,6 +660,37 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
                 <span className="text-gray-400">AI response will appear here...</span>
               )}
             </div>
+          </div>
+        )}
+        <div className="mb-2 flex items-center gap-4">
+          <label htmlFor="vad-toggle" className="font-bold">VAD:</label>
+          <button
+            id="vad-toggle"
+            className={`px-3 py-1 rounded ${vadEnabled ? 'bg-green-600' : 'bg-gray-600'} text-white`}
+            onClick={() => setVadEnabled(v => !v)}
+            disabled={isConnected}
+          >
+            {vadEnabled ? 'ON' : 'OFF'}
+          </button>
+        </div>
+        {!isConnected && (
+          <div className="mb-4">
+            <label className="block font-bold mb-1">System Prompt (AI Persona):</label>
+            <textarea
+              className="w-full p-2 rounded bg-gray-700 text-white"
+              rows={3}
+              value={systemPrompt}
+              onChange={e => setSystemPrompt(e.target.value)}
+              placeholder="Describe your AI co-founder persona, background, and behavior..."
+            />
+            <label className="block font-bold mt-2 mb-1">Greeting Script:</label>
+            <textarea
+              className="w-full p-2 rounded bg-gray-700 text-white"
+              rows={2}
+              value={greetingScript}
+              onChange={e => setGreetingScript(e.target.value)}
+              placeholder="What should Sia say as her greeting?"
+            />
           </div>
         )}
       </div>
