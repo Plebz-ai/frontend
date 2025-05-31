@@ -71,6 +71,16 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
   const speechStartTimeRef = useRef<number | null>(null);
   const MIN_UTTERANCE_DURATION = 1.0; // seconds
 
+  // --- MediaSource Streaming Audio Playback ---
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const mediaSourceUrlRef = useRef<string | null>(null);
+  const [isMediaSourceSupported, setIsMediaSourceSupported] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsMediaSourceSupported(!!window.MediaSource);
+  }, []);
+
   const handleStartCall = async () => {
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:8010/ws/voice-session`;
     const ws = new WebSocket(wsUrl);
@@ -95,79 +105,178 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'tts_mime_type') {
-          ttsMimeTypeRef.current = data.mime_type;
-          console.log('[VoiceCall][TTS] Received MIME type:', data.mime_type);
+          console.log('[VoiceCall][TTS] Received tts_mime_type:', data.mime_type);
+          // Revert to always using WAV for compatibility
+          ttsMimeTypeRef.current = 'audio/wav';
+          console.log('[VoiceCall][TTS] Received MIME type:', ttsMimeTypeRef.current);
+          // Setup MediaSource if supported and type is supported
+          if (window.MediaSource && window.MediaSource.isTypeSupported('audio/wav')) {
+            const mime = 'audio/wav';
+            if (audioRef.current) {
+              audioRef.current.pause();
+              if (mediaSourceUrlRef.current) {
+                URL.revokeObjectURL(mediaSourceUrlRef.current);
+              }
+            }
+            const mediaSource = new MediaSource();
+            mediaSourceRef.current = mediaSource;
+            const url = URL.createObjectURL(mediaSource);
+            mediaSourceUrlRef.current = url;
+            audioRef.current = new Audio(url);
+            audioRef.current.onended = () => {
+              setIsTTSPlaying(false);
+              if (mediaSourceUrlRef.current) {
+                URL.revokeObjectURL(mediaSourceUrlRef.current);
+              }
+              // Only start audio streaming after greeting playback is fully finished
+              if (!audioStreamingStartedRef.current) {
+                startAudioStreaming();
+                console.log('[VoiceCall] Audio streaming started after greeting playback ended');
+              }
+            };
+            audioRef.current.onerror = (e) => {
+              setTtsError('Playback failed');
+              setIsTTSPlaying(false);
+              if (mediaSourceUrlRef.current) {
+                URL.revokeObjectURL(mediaSourceUrlRef.current);
+              }
+              console.error('[VoiceCall][TTS] Playback failed', e);
+            };
+            setIsTTSPlaying(true);
+            audioRef.current.play().then(() => {
+              console.log('[VoiceCall][TTS] MediaSource playback started');
+            }).catch(err => {
+              setTtsError('Playback failed');
+              setIsTTSPlaying(false);
+              if (mediaSourceUrlRef.current) {
+                URL.revokeObjectURL(mediaSourceUrlRef.current);
+              }
+              console.error('[VoiceCall][TTS] Playback failed (promise)', err);
+            });
+            mediaSource.addEventListener('sourceopen', () => {
+              try {
+                const sb = mediaSource.addSourceBuffer(mime);
+                sourceBufferRef.current = sb;
+                sb.mode = 'sequence';
+                sb.addEventListener('error', (e) => {
+                  setTtsError('SourceBuffer error');
+                  console.error('[VoiceCall][TTS] SourceBuffer error', e);
+                });
+              } catch (e) {
+                setTtsError('Failed to add SourceBuffer, falling back to normal playback.');
+                console.warn('[VoiceCall][TTS] Failed to add SourceBuffer, falling back to Blob playback:', e);
+                // Fallback: accumulate chunks for Blob playback
+                mediaSourceRef.current = null;
+                sourceBufferRef.current = null;
+                mediaSourceUrlRef.current = null;
+              }
+            });
+          }
         } else if (data.type === 'tts_chunk') {
           try {
             const bytes = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
-            ttsAudioChunks.current.push(bytes);
             console.log('[VoiceCall][TTS] Received tts_chunk, decoded size:', bytes.length);
+            if (
+              window.MediaSource &&
+              mediaSourceRef.current &&
+              sourceBufferRef.current &&
+              window.MediaSource.isTypeSupported('audio/wav')
+            ) {
+              const sb = sourceBufferRef.current;
+              if (!sb.updating) {
+                sb.appendBuffer(bytes);
+              } else {
+                sb.addEventListener('updateend', function handler() {
+                  sb.removeEventListener('updateend', handler);
+                  sb.appendBuffer(bytes);
+                });
+              }
+            } else {
+              // Fallback: accumulate chunks for Blob playback
+              ttsAudioChunks.current.push(bytes);
+            }
           } catch (err) {
             setTtsError('Failed to decode audio chunk');
             console.error('[VoiceCall][TTS] Failed to decode tts_chunk:', err);
           }
         } else if (data.type === 'tts_end') {
-          if (ttsAudioChunks.current.length === 0) {
-            setTtsError('No audio received');
-            console.error('[VoiceCall][TTS] No audio received at tts_end');
-            return;
-          }
-          const totalLength = ttsAudioChunks.current.reduce((acc, b) => acc + b.length, 0);
-          const merged = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of ttsAudioChunks.current) {
-            merged.set(chunk, offset);
-            offset += chunk.length;
-          }
-          ttsAudioChunks.current = [];
-          if (audioRef.current) {
-            audioRef.current.pause();
-            if (lastAudioUrlRef.current && audioRef.current.src.startsWith('blob:')) {
-              URL.revokeObjectURL(audioRef.current.src);
+          console.log('[VoiceCall][TTS] Received tts_end. Forcing playback of merged audio Blob.');
+          if (
+            window.MediaSource &&
+            mediaSourceRef.current &&
+            sourceBufferRef.current &&
+            window.MediaSource.isTypeSupported('audio/wav')
+          ) {
+            const ms = mediaSourceRef.current;
+            if (ms.readyState === 'open') {
+              ms.endOfStream();
             }
-          }
-          const blob = new Blob([merged], { type: ttsMimeTypeRef.current || 'audio/wav' });
-          const url = URL.createObjectURL(blob);
-          lastAudioUrlRef.current = url;
-          audioRef.current = new Audio(url);
-          console.log('[VoiceCall][TTS] Starting playback, total audio size:', merged.length, 'MIME:', ttsMimeTypeRef.current || 'audio/wav');
-          audioRef.current.onended = () => {
-            URL.revokeObjectURL(url);
-            setIsTTSPlaying(false);
-            console.log('[VoiceCall][TTS] Playback ended');
-            // Only start audio streaming after greeting playback is fully finished
-            if (!audioStreamingStartedRef.current) {
-              startAudioStreaming();
-              console.log('[VoiceCall] Audio streaming started after greeting playback ended');
+            // No need to do anything else, onended will handle cleanup
+          } else {
+            // Fallback: play merged Blob as before
+            if (ttsAudioChunks.current.length === 0) {
+              setTtsError('No audio received');
+              console.error('[VoiceCall][TTS] No audio received at tts_end');
+              return;
             }
-          };
-          audioRef.current.onerror = (e) => {
-            setTtsError('Playback failed');
-            setIsTTSPlaying(false);
-            URL.revokeObjectURL(url);
-            console.error('[VoiceCall][TTS] Playback failed', e);
-          };
-          setIsTTSPlaying(true);
-          audioRef.current.play().then(() => {
-            console.log('[VoiceCall][TTS] Playback started, duration:', audioRef.current?.duration);
-          }).catch(err => {
-            setTtsError('Playback failed');
-            setIsTTSPlaying(false);
-            URL.revokeObjectURL(url);
-            console.error('[VoiceCall][TTS] Playback failed (promise)', err);
-          });
+            const totalLength = ttsAudioChunks.current.reduce((acc, b) => acc + b.length, 0);
+            const merged = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of ttsAudioChunks.current) {
+              merged.set(chunk, offset);
+              offset += chunk.length;
+            }
+            ttsAudioChunks.current = [];
+            if (audioRef.current) {
+              audioRef.current.pause();
+              if (lastAudioUrlRef.current && audioRef.current.src.startsWith('blob:')) {
+                URL.revokeObjectURL(audioRef.current.src);
+              }
+            }
+            const blob = new Blob([merged], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            lastAudioUrlRef.current = url;
+            audioRef.current = new Audio(url);
+            audioRef.current.onended = () => {
+              URL.revokeObjectURL(url);
+              setIsTTSPlaying(false);
+              // Only start audio streaming after greeting playback is fully finished
+              if (!audioStreamingStartedRef.current) {
+                startAudioStreaming();
+                console.log('[VoiceCall] Audio streaming started after greeting playback ended');
+              }
+            };
+            audioRef.current.onerror = (e) => {
+              setTtsError('Playback failed');
+              setIsTTSPlaying(false);
+              URL.revokeObjectURL(url);
+              console.error('[VoiceCall][TTS] Playback failed', e);
+            };
+            setIsTTSPlaying(true);
+            audioRef.current.play().then(() => {
+              console.log('[VoiceCall][TTS] Playback started, duration:', audioRef.current?.duration);
+            }).catch(err => {
+              setTtsError('Playback failed');
+              setIsTTSPlaying(false);
+              URL.revokeObjectURL(url);
+              console.error('[VoiceCall][TTS] Playback failed (promise)', err);
+            });
+          }
         } else if (data.type === 'greeting') {
           setStatus('Call started');
         } else if (data.type === 'error') {
           setTtsError(data.error || 'TTS error');
           console.error('[VoiceCall][TTS] Error:', data.error);
         } else if (data.type === 'llm2_partial') {
+          console.log('[VoiceCall][TTS] LLM2 partial:', data.text);
           setLlm2StreamingText(data.text || "");
         } else if (data.type === 'llm2_final') {
+          console.log('[VoiceCall][TTS] LLM2 final:', data.text);
           setLlm2FinalText(data.text || "");
           setLlm2StreamingText("");
           setHistory(prev => [...prev, { role: 'assistant', text: data.text || "" }]);
         } else if (data.type === 'transcript_final') {
+          console.log('[VoiceCall][TTS] transcript_final:', data.text);
           setHistory(prev => [...prev, { role: 'user', text: data.text || "" }]);
         }
       } catch (err) {
@@ -334,32 +443,9 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           }
           const average = sum / dataArray.length / 255; // Normalize to 0-1
           
-          // Detect speech start
-          if (average > VOLUME_THRESHOLD && !isSpeechDetected) {
-            isSpeechDetected = true;
-            setIsSpeaking(true);
-            speechStartTimeRef.current = Date.now();
-            console.log('[VoiceCall][SimpleVAD] Speech started, volume:', average.toFixed(3));
-            
-            // Handle barge-in
-            if (isTTSPlaying && audioRef.current) {
-              audioRef.current.pause();
-              setIsTTSPlaying(false);
-              if (wsRef.current && wsRef.current.readyState === 1) {
-                wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
-                console.log('[VoiceCall][SimpleVAD] Sent barge_in marker');
-              }
-            }
-            
-            // Clear any pending silence timeout
-            if (silenceTimeout) {
-              clearTimeout(silenceTimeout);
-              silenceTimeout = null;
-            }
-          } 
           // Detect silence after speech
-          else if (average <= VOLUME_THRESHOLD && isSpeechDetected) {
-            // Only trigger end after sustained silence (500ms)
+          if (average <= VOLUME_THRESHOLD && isSpeechDetected) {
+            // Only trigger end after sustained silence (1200ms)
             if (!silenceTimeout) {
               silenceTimeout = setTimeout(() => {
                 isSpeechDetected = false;
@@ -380,13 +466,29 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
                   console.log(`[VoiceCall][SimpleVAD] Ignored short utterance (${durationSec.toFixed(2)}s)`);
                 }
                 silenceTimeout = null;
-              }, 500);
+              }, 1200);
             }
-          } 
-          // Reset silence timer if volume goes back up
-          else if (average > VOLUME_THRESHOLD && isSpeechDetected && silenceTimeout) {
-            clearTimeout(silenceTimeout);
-            silenceTimeout = null;
+          }
+          // Detect speech start
+          if (average > VOLUME_THRESHOLD && !isSpeechDetected) {
+            isSpeechDetected = true;
+            setIsSpeaking(true);
+            speechStartTimeRef.current = Date.now();
+            console.log('[VoiceCall][SimpleVAD] Speech started, volume:', average.toFixed(3));
+            // Handle barge-in
+            if (isTTSPlaying && audioRef.current && !audioRef.current.paused) {
+              audioRef.current.pause();
+              setIsTTSPlaying(false);
+              if (wsRef.current && wsRef.current.readyState === 1) {
+                wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
+                console.log('[VoiceCall][SimpleVAD] Sent barge_in marker');
+              }
+            }
+            // Clear any pending silence timeout
+            if (silenceTimeout) {
+              clearTimeout(silenceTimeout);
+              silenceTimeout = null;
+            }
           }
           
           // Schedule next analysis
@@ -549,6 +651,11 @@ export default function VoiceCall({ character, onClose, userPreferences }: Voice
           URL.revokeObjectURL(lastAudioUrlRef.current);
         }
       }
+      if (mediaSourceUrlRef.current) {
+        URL.revokeObjectURL(mediaSourceUrlRef.current);
+      }
+      mediaSourceRef.current = null;
+      sourceBufferRef.current = null;
     };
     // eslint-disable-next-line
   }, []);
