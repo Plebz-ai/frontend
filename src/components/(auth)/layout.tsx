@@ -14,13 +14,22 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       {/* Simple nav bar */}
       <div className="absolute top-0 left-0 w-full p-6 z-10">
         <Link href="/" className="font-semibold text-xl">
-          plebz.ai
+          Aletheia
         </Link>
       </div>
       
       {/* Center content */}
       <div className="w-full flex items-center justify-center p-8 z-10">
         <div className="w-full max-w-sm mx-auto">
+          <div className="flex items-center justify-center mb-8">
+            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mr-4">
+              <span className="text-white font-bold text-xl">A</span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Aletheia</h1>
+              <p className="text-sm text-gray-400">Break Past to Present for Future</p>
+            </div>
+          </div>
           {children}
         </div>
       </div>

@@ -3,12 +3,15 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createWebSocketClient, getWebSocketUrlForCharacter, isCustomCharacter } from '../../lib/websocket'
 import { Character } from '../../lib/api'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence } from 'motion/react'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
 import { FaMicrophone, FaMicrophoneSlash, FaPaperPlane, FaSpinner, FaVolumeUp, FaVideo, FaChevronRight, FaSmile } from 'react-icons/fa'
 import VideoCall from '../../components/video-call/VideoCall'
 import VoiceCall from '../video-call/VoiceCall'
 import axios from 'axios'
+import { Send, Mic, Video, Phone, MoreVertical, Settings, Volume2, VolumeX, Sparkles, User, Bot } from 'lucide-react'
+import { useVoiceWebSocket } from '@/hooks/useVoiceWebSocket'
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 
 interface Message {
   id: string
@@ -71,6 +74,28 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
 
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsModalRef = useRef<HTMLDivElement>(null);
+
+  // Custom hooks
+  const { 
+    isConnected: voiceWebSocketConnected, 
+    sendMessage: voiceWebSocketSendMessage, 
+    audioChunks, 
+    isProcessing: voiceWebSocketProcessing 
+  } = useVoiceWebSocket(character.id)
+  
+  const { 
+    playAudio, 
+    stopAudio, 
+    isPlaying, 
+    currentAudioUrl 
+  } = useAudioPlayer()
+  
+  const { 
+    startListening, 
+    stopListening, 
+    isListening, 
+    transcript 
+  } = useSpeechRecognition()
 
   useEffect(() => {
     window.lastCharacter = character;
@@ -244,33 +269,6 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
       }
     }
   }
-
-  const playAudio = (messageId: string) => {
-    const audioData = audioMessages[messageId]
-    if (audioData) {
-      setCurrentAudio(messageId)
-      audioPlayer.play(audioData, () => {
-        setCurrentAudio(null)
-      })
-    }
-  }
-
-  // Remove or comment out the code that fetches from /api/v1/messages
-  // useEffect(() => {
-  //   // Fetch persistent chat history from backend
-  //   const fetchHistory = async () => {
-  //     try {
-  //       const res = await axios.get(`/api/v1/messages?characterId=${character.id}&sessionId=${sessionIdRef.current}&limit=${MAX_DISPLAY_MESSAGES}`);
-  //       if (res.data && Array.isArray(res.data.messages)) {
-  //         setMessages(res.data.messages);
-  //         setHasMoreHistory(res.data.count > MAX_DISPLAY_MESSAGES);
-  //       }
-  //     } catch (err) {
-  //       console.error('Failed to fetch chat history:', err);
-  //     }
-  //   };
-  //   fetchHistory();
-  // }, [character.id, onSessionIdChange]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -507,7 +505,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             className="flex items-center px-3 py-1.5 text-sm bg-indigo-500 text-white rounded-md hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
             title="Voice call is not yet implemented. Only text and audio messages are supported."
           >
-            <FaMicrophone className="mr-1.5 text-xs" />
+            <Mic className="mr-1.5 text-xs" />
             <span className="font-medium">Voice Call</span>
           </button>
           <button
@@ -515,7 +513,7 @@ export default function CharacterChat({ character, onSessionIdChange, onMessages
             onClick={handleVideoCallClick}
             className="flex items-center px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-[#0a0b0e] transition-all duration-200 shadow"
           >
-            <FaVideo className="mr-1.5 text-xs" />
+            <Video className="mr-1.5 text-xs" />
             <span className="font-medium">Video Call</span>
           </button>
         </div>

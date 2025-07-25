@@ -1,381 +1,532 @@
-'use client'
+'use client';
 
-import React, { useState, useEffect, useRef } from 'react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useAuth } from '@/lib/auth'
-import { Character, characterApi } from '@/lib/api'
-import { motion, AnimatePresence } from 'framer-motion'
-import { FaPlus, FaCompass, FaSearch, FaChevronLeft, FaChevronRight } from 'react-icons/fa'
-import { useSidebar } from '@/lib/sidebar-context'
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useAuth } from '@/lib/auth';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Home, 
+  Compass, 
+  Plus, 
+  MessageCircle, 
+  Video, 
+  Users, 
+  Settings, 
+  LogOut,
+  Sparkles,
+  Crown,
+  Zap,
+  Shield,
+  Globe,
+  Star,
+  TrendingUp,
+  Award,
+  Bot,
+  Heart,
+  BookOpen,
+  Clock,
+  ArrowRight,
+  ChevronRight,
+  ChevronDown,
+  Check,
+  Infinity,
+  Lock,
+  Eye,
+  Headphones,
+  Camera,
+  Smartphone,
+  Monitor,
+  Tablet,
+  Brain,
+  Cpu,
+  Fingerprint,
+  Satellite,
+  Wifi,
+  Target,
+  Rocket,
+  MousePointer,
+  MousePointer2,
+  User
+} from 'lucide-react';
 
 export default function Sidebar() {
-  const pathname = usePathname()
-  const { user, logout } = useAuth()
-  const { collapsed, setCollapsed, refreshTrigger, refreshCharacters } = useSidebar()
-  const [characters, setCharacters] = useState<Character[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isMounted, setIsMounted] = useState(false)
-  const [showUserMenu, setShowUserMenu] = useState(false)
-  const userMenuRef = useRef<HTMLDivElement>(null)
+  const pathname = usePathname();
+  const { user, logout, isAuthenticated } = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
-  // Group characters by time
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const lastWeek = new Date(today)
-  lastWeek.setDate(lastWeek.getDate() - 7)
-
-  // Set isMounted to true after component mounts
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
-
-  useEffect(() => {
-    const fetchCharacters = async () => {
-      try {
-        setLoading(true)
-        const data = await characterApi.list()
-        console.log('Characters from API:', data)
-        setCharacters(data)
-        setError(null)
-      } catch (err) {
-        console.error('Error fetching characters:', err)
-        setError('Failed to load characters')
-      } finally {
-        setLoading(false)
-      }
+  const navigationItems = [
+    {
+      title: 'Main',
+      items: [
+        {
+          name: 'Dashboard',
+          href: '/dashboard',
+          icon: Home,
+          description: 'Overview and analytics'
+        },
+        {
+          name: 'Explore',
+          href: '/explore',
+          icon: Compass,
+          description: 'Discover AI characters'
+        },
+        {
+          name: 'Create',
+          href: '/create',
+          icon: Plus,
+          description: 'Build your AI character'
+        }
+      ]
+    },
+    {
+      title: 'Communication',
+      items: [
+        {
+          name: 'Start Chat',
+          href: '/characters',
+          icon: MessageCircle,
+          description: 'Text/voice conversations',
+          badge: 'New'
+        },
+        {
+          name: 'Start Video Call',
+          href: '/characters',
+          icon: Video,
+          description: 'Video call with AI',
+          badge: 'Beta'
+        },
+        {
+          name: 'Character Chat',
+          href: '/characters',
+          icon: Users,
+          description: 'Text-based conversations'
+        }
+      ]
+    },
+    {
+      title: 'Advanced',
+      items: [
+        {
+          name: 'AI Processing',
+          href: '/ai-processing',
+          icon: Cpu,
+          description: 'Advanced neural networks',
+          premium: true
+        },
+        {
+          name: 'Biometric Security',
+          href: '/security',
+          icon: Fingerprint,
+          description: 'Voice recognition security',
+          premium: true
+        },
+        {
+          name: 'Global Infrastructure',
+          href: '/infrastructure',
+          icon: Satellite,
+          description: 'Distributed servers',
+          premium: true
+        }
+      ]
     }
+  ];
 
-    fetchCharacters()
-  }, [refreshTrigger])
-
-  // Group characters by time period based on actual creation dates
-  const todayChars = characters.filter(char => {
-    const createdDate = new Date(char.created_at);
-    return createdDate.toDateString() === today.toDateString();
-  });
-  
-  const yesterdayChars = characters.filter(char => {
-    const createdDate = new Date(char.created_at);
-    return createdDate.toDateString() === yesterday.toDateString();
-  });
-  
-  const thisWeekChars = characters.filter(char => {
-    const createdDate = new Date(char.created_at);
-    return createdDate > lastWeek && 
-           createdDate.toDateString() !== today.toDateString() && 
-           createdDate.toDateString() !== yesterday.toDateString();
-  });
-  
-  const lastWeekChars = characters.filter(char => {
-    const createdDate = new Date(char.created_at);
-    return createdDate <= lastWeek;
-  });
-
-  // Filter characters based on search query
-  const filteredCharacters = characters.filter(char => 
-    char.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  // Add click outside handler for user menu
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false)
-      }
+  const quickActions = [
+    {
+      name: 'Create Character',
+      href: '/create',
+      icon: Plus,
+      gradient: 'from-teal-400 to-blue-500'
+    },
+    {
+      name: 'Start Chat',
+      href: '/characters',
+      icon: MessageCircle,
+      gradient: 'from-blue-500 to-purple-500'
+    },
+    {
+      name: 'Start Video Call',
+      href: '/characters',
+      icon: Video,
+      gradient: 'from-purple-500 to-pink-500'
     }
-    
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
+  ];
+
+  const recentCharacters = [
+    {
+      name: 'Future You',
+      avatar: 'FY',
+      href: '/characters/future-you',
+      lastActive: '2 min ago'
+    },
+    {
+      name: 'Einstein',
+      avatar: 'AE',
+      href: '/characters/einstein',
+      lastActive: '5 min ago'
+    },
+    {
+      name: 'Creative Coach',
+      avatar: 'CC',
+      href: '/characters/creative-coach',
+      lastActive: '1 hour ago'
     }
-  }, [])
+  ];
 
-  // Character item component
-  const CharacterItem = ({ character }: { character: Character }) => {
-    const isActive = pathname === `/characters/${character.id}`
-    const avatarUrl = character.avatar_url || '/placeholder-avatar.png'
-    
-    return (
-      <Link href={`/characters/${character.id}`}>
-        <div 
-          className={`flex items-center py-2 px-3 ${
-            isActive 
-              ? 'text-white' 
-              : 'text-white hover:bg-[#22232a]/20'
-          } transition-all duration-150 cursor-pointer`}
-        >
-          <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden mr-3">
-            <img 
-              src={avatarUrl} 
-              alt={character.name} 
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                // Fallback to first letter if image fails to load
-                e.currentTarget.style.display = 'none';
-                e.currentTarget.nextElementSibling?.classList.remove('hidden');
-              }}
-            />
-            <div className="w-full h-full bg-[#301e63] flex items-center justify-center text-white font-bold text-sm hidden">
-              {character.name.charAt(0).toUpperCase()}
-            </div>
-          </div>
-          {isMounted && !collapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-medium truncate text-white">{character.name}</p>
-            </div>
-          )}
-        </div>
-      </Link>
-    )
-  }
+  const isActive = (href: string) => pathname === href;
 
-  // Time section component
-  const TimeSection = ({ title, characters }: { title: string, characters: Character[] }) => {
-    if (characters.length === 0) return null
-    
-    return (
-      <div className="mb-5">
-        {isMounted && !collapsed && <h3 className="text-sm font-normal text-gray-300 mb-1 px-3">{title}</h3>}
-        <div>
-          {characters.map(character => (
-            <CharacterItem key={character.id} character={character} />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // Only show sidebar on character pages
-  if (pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname.includes('/forgot-password')) {
-    return null
-  }
-
-  // Don't render anything until client-side hydration is complete
-  if (!isMounted) {
-    return (
-      <div className={`h-screen flex flex-col bg-[#121316] transition-all duration-300 w-[340px]`} />
-    )
-  }
+  const handleLogout = async () => {
+    await logout();
+  };
 
   return (
-    <motion.div 
-      className={`h-screen fixed top-0 left-0 flex flex-col bg-[#121316] transition-all duration-300 ${
-        collapsed ? 'w-[80px]' : 'w-[340px]'
+    <motion.aside
+      className={`sidebar-modern h-screen fixed left-0 top-0 z-40 transition-all duration-300 ${
+        isCollapsed ? 'w-20' : 'w-80'
       }`}
-      initial={{ x: -20, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
+      initial={{ x: -320 }}
+      animate={{ x: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
     >
-      {/* App logo and collapse button */}
-      <div className="flex items-center justify-between px-5 py-5">
-        {!collapsed && (
-          <Link href="/explore" className="text-white font-bold text-xl tracking-tight">
-            plebz.ai
-          </Link>
-        )}
-        <div className="flex items-center">
-          <button 
-            onClick={() => refreshCharacters()} 
-            className="p-1.5 text-gray-400 hover:text-white transition-colors mr-1"
-            title="Refresh characters"
+      <div className="h-full flex flex-col">
+        {/* Header */}
+        <motion.div 
+          className="p-6 border-b border-white/10"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <div className="flex items-center justify-between">
+            {!isCollapsed && (
+              <motion.div 
+                className="flex items-center space-x-3"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3 }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-          <button 
-            onClick={() => setCollapsed(!collapsed)} 
-            className="p-1.5 text-gray-400 hover:text-white transition-colors"
+                <motion.div 
+                  className="w-10 h-10 rounded-xl bg-gradient-to-r from-teal-400 to-blue-500 flex items-center justify-center"
+                  whileHover={{ rotate: 5, scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Sparkles className="w-6 h-6 text-white" />
+                </motion.div>
+                <div>
+                  <h1 className="text-xl font-bold text-gradient">Aletheia</h1>
+                  <p className="text-xs text-gray-400">AI Platform</p>
+          </div>
+              </motion.div>
+            )}
+            
+            <motion.button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="w-8 h-8 rounded-lg glass-card hover:bg-white/10 transition-colors flex items-center justify-center"
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <motion.div
+                animate={{ rotate: isCollapsed ? 180 : 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <ChevronRight className="w-4 h-4 text-gray-300" />
+              </motion.div>
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {/* User Profile */}
+        {isAuthenticated && user && !isCollapsed && (
+          <motion.div 
+            className="p-4 border-b border-white/10"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
           >
-            {collapsed ? <FaChevronRight size={16} /> : <FaChevronLeft size={16} />}
-          </button>
-        </div>
-      </div>
-      
-      {/* Create and discover buttons */}
-      <div className="px-4 py-3">
-        <Link 
-          href="/create" 
-          className={`flex items-center ${collapsed ? 'justify-center' : ''} py-3 px-5 mb-3 bg-[#1D1F25] hover:bg-[#2a2b31] text-white rounded-full transition-all`}
-        >
-          <div className="w-5 h-5 flex items-center justify-center mr-3">
-            <FaPlus size={16} className="text-white" />
+            <div className="flex items-center space-x-3 p-3 rounded-xl glass-card hover:bg-white/5 transition-colors">
+              <motion.div 
+                className="w-12 h-12 rounded-xl bg-gradient-to-r from-teal-400 to-blue-500 flex items-center justify-center"
+                whileHover={{ scale: 1.1, rotate: 5 }}
+              >
+                <User className="w-6 h-6 text-white" />
+              </motion.div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-white truncate">
+                  {user.name || 'User'}
+                </h3>
+                <p className="text-xs text-gray-400 truncate">
+                  {user.email || 'user@example.com'}
+                </p>
           </div>
-          {!collapsed && <span className="font-medium">Create</span>}
-        </Link>
-        
-        <Link 
-          href="/characters" 
-          className={`flex items-center ${collapsed ? 'justify-center' : ''} py-3 px-5 mb-3 bg-[#1D1F25] hover:bg-[#2a2b31] text-white rounded-lg transition-all`}
-        >
-          <div className="w-5 h-5 flex items-center justify-center mr-3">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg" className="text-white">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-          </div>
-          {!collapsed && <span className="font-medium">Catalogue</span>}
-        </Link>
-        
-        <Link 
-          href="/explore" 
-          className={`flex items-center ${collapsed ? 'justify-center' : ''} py-3 px-5 bg-[#1D1F25] hover:bg-[#2a2b31] text-white rounded-lg transition-all`}
-        >
-          <div className="w-5 h-5 flex items-center justify-center mr-3">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg" className="text-white">
-              <circle cx="12" cy="12" r="10" strokeWidth="2" />
-              <circle cx="12" cy="12" r="3" strokeWidth="2" />
-            </svg>
-          </div>
-          {!collapsed && <span className="font-medium">Explore</span>}
-        </Link>
-      </div>
-      
-      {/* Search box */}
-      {!collapsed && (
-        <div className="px-4 mb-5">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <FaSearch className="h-4 w-4 text-gray-500" />
+              <motion.div 
+                className="w-2 h-2 bg-gradient-to-r from-teal-400 to-blue-500 rounded-full"
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Search for Characters"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#1D1F25] text-gray-300 pl-11 pr-4 py-2.5 rounded-lg border-none focus:outline-none focus:ring-1 focus:ring-gray-600 placeholder-gray-500 transition-all"
-            />
-          </div>
-        </div>
-      )}
-      
-      {/* Character list by time periods */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
-        <AnimatePresence>
-          {loading ? (
+          </motion.div>
+        )}
+
+        {/* Quick Actions */}
+        {!isCollapsed && (
+          <motion.div 
+            className="p-4 border-b border-white/10"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Quick Actions
+            </h3>
+            <div className="space-y-2">
+              {quickActions.map((action, index) => (
+                <Link key={index} href={action.href}>
+                  <motion.div
+                    className="flex items-center space-x-3 p-3 rounded-xl glass-card hover:bg-white/5 transition-colors cursor-pointer group"
+                    whileHover={{ x: 5, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.6 + index * 0.1 }}
+                  >
             <motion.div 
-              className="flex justify-center py-8"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+                      className={`w-8 h-8 rounded-lg bg-gradient-to-r ${action.gradient} flex items-center justify-center group-hover:scale-110 transition-transform`}
+                      whileHover={{ rotate: 5 }}
             >
-              <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                      <action.icon className="w-4 h-4 text-white" />
             </motion.div>
-          ) : error ? (
+                    <span className="text-sm font-medium text-white group-hover:text-gradient transition-colors">
+                      {action.name}
+                    </span>
             <motion.div 
-              className="text-red-400 text-sm text-center py-8"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      initial={{ x: -10 }}
+                      animate={{ x: 0 }}
             >
-              {error}
+                      <ArrowRight className="w-4 h-4 text-teal-400" />
+                    </motion.div>
+                  </motion.div>
+                </Link>
+              ))}
+            </div>
             </motion.div>
-          ) : searchQuery ? (
+        )}
+
+        {/* Navigation */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 space-y-6">
+            {navigationItems.map((section, sectionIndex) => (
             <motion.div
+                key={section.title}
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7 + sectionIndex * 0.1 }}
+              >
+                {!isCollapsed && (
+                  <motion.h3 
+                    className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+                    transition={{ delay: 0.8 + sectionIndex * 0.1 }}
             >
-              {filteredCharacters.length === 0 ? (
-                <p className="text-gray-500 text-sm text-center py-8">No characters found</p>
-              ) : (
-                filteredCharacters.map(character => (
-                  <CharacterItem key={character.id} character={character} />
-                ))
-              )}
+                    {section.title}
+                  </motion.h3>
+                )}
+                
+                <div className="space-y-1">
+                  {section.items.map((item, itemIndex) => (
+                    <div key={item.name}>
+                      <Link href={item.href}>
+                        <motion.div
+                          className={`flex items-center space-x-3 p-3 rounded-xl transition-all duration-300 cursor-pointer group relative overflow-hidden ${
+                            isActive(item.href)
+                              ? 'bg-gradient-to-r from-teal-500/20 to-blue-500/20 border border-teal-500/30'
+                              : 'glass-card hover:bg-white/5'
+                          }`}
+                          whileHover={{ x: 5, scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.9 + sectionIndex * 0.1 + itemIndex * 0.05 }}
+                        >
+                          {/* Active indicator */}
+                          {isActive(item.href) && (
+                            <motion.div
+                              className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-teal-400 to-blue-500"
+                              initial={{ scaleY: 0 }}
+                              animate={{ scaleY: 1 }}
+                              transition={{ duration: 0.3 }}
+                            />
+                          )}
+                          
+                          <motion.div 
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                              isActive(item.href)
+                                ? 'bg-gradient-to-r from-teal-400 to-blue-500'
+                                : 'bg-white/10 group-hover:bg-white/20'
+                            }`}
+                            whileHover={{ rotate: 5, scale: 1.1 }}
+                          >
+                            <item.icon className={`w-4 h-4 ${
+                              isActive(item.href) ? 'text-white' : 'text-gray-300'
+                            }`} />
             </motion.div>
-          ) : (
+                          
+                          {!isCollapsed && (
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center space-x-2">
+                                <span className={`text-sm font-medium truncate ${
+                                  isActive(item.href) ? 'text-white' : 'text-gray-300 group-hover:text-white'
+                                }`}>
+                                  {item.name}
+                                </span>
+                                {item.badge && (
+                                  <motion.span 
+                                    className="px-2 py-1 text-xs bg-gradient-to-r from-teal-400 to-blue-500 text-white rounded-full"
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ delay: 1 + itemIndex * 0.1 }}
+                                  >
+                                    {item.badge}
+                                  </motion.span>
+                                )}
+                                {item.premium && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ staggerChildren: 0.07 }}
+                                    className="w-4 h-4"
+                                    whileHover={{ scale: 1.2, rotate: 360 }}
+                                    transition={{ duration: 0.5 }}
             >
-              {characters.length === 0 ? (
-                <p className="text-gray-500 text-sm text-center py-8">No conversations yet</p>
-              ) : (
-                <>
-                  <h3 className={`text-sm font-normal text-gray-300 mb-3 px-3 ${collapsed ? 'opacity-0' : 'opacity-100'}`}>
-                    Conversation History
-                  </h3>
-                  <div>
-                    {characters.map(character => (
-                      <CharacterItem key={character.id} character={character} />
-                    ))}
+                                    <Crown className="w-4 h-4 text-yellow-400 fill-current" />
+                                  </motion.div>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-400 truncate mt-1">
+                                {item.description}
+                              </p>
                   </div>
-                </>
               )}
             </motion.div>
-          )}
-        </AnimatePresence>
+                      </Link>
+                    </div>
+                  ))}
       </div>
-      
-      {/* Footer links */}
-      {!collapsed && (
-        <div className="px-5 py-3 text-xs text-gray-400">
-          <div className="flex space-x-2">
-            <Link href="/privacy" className="hover:text-gray-300 transition-colors">
-              Privacy Policy
-            </Link>
-            <span>•</span>
-            <Link href="/terms" className="hover:text-gray-300 transition-colors">
-              Terms of Service
-            </Link>
+              </motion.div>
+            ))}
           </div>
-          
-          <Link 
-            href="/upgrade" 
-            className="flex items-center justify-center mt-4 py-3 bg-[#1D1F25] hover:bg-[#28293a]/70 text-white rounded-full transition-all border border-[#3f4046]"
+        </div>
+      
+        {/* Recent Characters */}
+        {!isCollapsed && (
+          <motion.div 
+            className="p-4 border-t border-white/10"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.2 }}
           >
-            <span className="font-medium">Upgrade to plebz.ai</span>
-            <span className="text-blue-400 font-bold ml-1">+</span>
-          </Link>
-        </div>
-      )}
-      
-      {/* User profile */}
-      <div className="p-4 mt-1 border-t border-[#1f2026]" ref={userMenuRef}>
-        <div className={`flex items-center ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-10 h-10 rounded-full bg-[#301e63] flex items-center justify-center text-white font-bold text-sm">
-            {collapsed ? 'N' : 'S'}
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Recent Characters
+            </h3>
+            <div className="space-y-2">
+              {recentCharacters.map((character, index) => (
+                <Link key={index} href={character.href}>
+                  <motion.div
+                    className="flex items-center space-x-3 p-2 rounded-lg glass-card hover:bg-white/5 transition-colors cursor-pointer group"
+                    whileHover={{ x: 3, scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 1.3 + index * 0.1 }}
+                  >
+                    <motion.div 
+                      className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center text-xs font-semibold text-white group-hover:scale-110 transition-transform"
+                      whileHover={{ rotate: 5 }}
+                    >
+                      {character.avatar}
+                    </motion.div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate group-hover:text-gradient transition-colors">
+                        {character.name}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {character.lastActive}
+                      </p>
           </div>
-          
-          {!collapsed && (
-            <div className="ml-3 flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user?.name || 'Sauhard Gupta'}</p>
+                  </motion.div>
+                </Link>
+              ))}
             </div>
+          </motion.div>
           )}
           
-          {!collapsed && (
-            <button 
-              className="p-1.5 rounded-full text-gray-400 hover:text-white transition-colors"
-              onClick={() => setShowUserMenu(!showUserMenu)}
+        {/* Footer */}
+        <motion.div 
+          className="p-4 border-t border-white/10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.4 }}
+        >
+          {isAuthenticated ? (
+            <div className="space-y-2">
+              <Link href="/settings">
+                <motion.div
+                  className="flex items-center space-x-3 p-3 rounded-xl glass-card hover:bg-white/5 transition-colors cursor-pointer"
+                  whileHover={{ x: 5, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <motion.div 
+                    className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center"
+                    whileHover={{ rotate: 5 }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-          )}
+                    <Settings className="w-4 h-4 text-gray-300" />
+                  </motion.div>
+                  {!isCollapsed && (
+                    <span className="text-sm font-medium text-gray-300">Settings</span>
+                  )}
+                </motion.div>
+              </Link>
+              
+              <motion.button
+                onClick={handleLogout}
+                className="w-full flex items-center space-x-3 p-3 rounded-xl glass-card hover:bg-white/5 transition-colors"
+                whileHover={{ x: 5, scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <motion.div 
+                  className="w-8 h-8 rounded-lg bg-gradient-to-r from-red-400 to-pink-500 flex items-center justify-center"
+                  whileHover={{ rotate: 5 }}
+                >
+                  <LogOut className="w-4 h-4 text-white" />
+                </motion.div>
+                {!isCollapsed && (
+                  <span className="text-sm font-medium text-gray-300">Logout</span>
+                )}
+              </motion.button>
         </div>
-        
-        {/* User dropdown menu */}
-        {!collapsed && showUserMenu && (
-          <div className="absolute bottom-20 left-4 right-4 bg-[#1D1F25] rounded-lg shadow-lg border border-gray-800 overflow-hidden z-50">
-            <button 
-              onClick={logout} 
-              className="w-full px-4 py-3 flex items-center text-white hover:bg-[#2a2c36] transition-colors text-left"
+          ) : (
+            <div className="space-y-2">
+              <Link href="/login">
+                <motion.button
+                  className="w-full glass-card py-3 rounded-xl text-white hover:bg-white/10 transition-colors"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Logout
-            </button>
+                  {!isCollapsed ? 'Login' : <User className="w-5 h-5 mx-auto" />}
+                </motion.button>
+              </Link>
+              <Link href="/signup">
+                <motion.button
+                  className="w-full btn-primary"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  {!isCollapsed ? 'Get Started' : <Plus className="w-5 h-5 mx-auto" />}
+                </motion.button>
+              </Link>
           </div>
         )}
+        </motion.div>
       </div>
-    </motion.div>
-  )
+    </motion.aside>
+  );
 } 

@@ -1,259 +1,596 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/lib/auth'
-import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { 
+  Menu, 
+  X, 
+  Search, 
+  Bell, 
+  User, 
+  Settings, 
+  LogOut, 
+  Sparkles,
+  Crown,
+  Zap,
+  Shield,
+  Globe,
+  Star,
+  TrendingUp,
+  Award,
+  Bot,
+  MessageCircle,
+  Video,
+  Users,
+  Home,
+  Compass,
+  Plus,
+  Heart,
+  BookOpen,
+  Clock,
+  ArrowRight,
+  ChevronDown,
+  Check,
+  Infinity,
+  Lock,
+  Eye,
+  Headphones,
+  Camera,
+  Smartphone,
+  Monitor,
+  Tablet,
+  Sparkles as SparklesIcon,
+  Zap as ZapIcon,
+  Brain,
+  Cpu,
+  Fingerprint,
+  Satellite,
+  Wifi
+} from 'lucide-react'
 
 export default function Navbar() {
   const { user, logout, isAuthenticated } = useAuth()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [showUserDropdown, setShowUserDropdown] = useState(false)
-  const userMenuRef = useRef<HTMLDivElement>(null)
-  const router = useRouter()
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isScrolled, setIsScrolled] = useState(false)
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
 
-  const handleLogout = () => {
-    setShowUserDropdown(false)
-    logout()
-    router.push('/login')
-  }
-
-  // Close dropdown when clicking outside
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setShowUserDropdown(false)
-      }
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20)
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Navbar items with hover animations
-  const NavLink = ({ href, children }: { href: string, children: React.ReactNode }) => (
-    <Link 
-      href={href} 
-      className="relative group px-3 py-2"
-    >
-      <span className="relative z-10 text-gray-300 group-hover:text-white text-sm font-medium transition-colors duration-200">
-        {children}
-      </span>
-      <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-500 to-indigo-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></span>
-    </Link>
-  )
+  const handleLogout = async () => {
+    await logout()
+    setIsMenuOpen(false)
+  }
+
+  const features = [
+    {
+      icon: <MessageCircle className="w-5 h-5" />,
+      title: "Voice Conversations",
+      description: "Natural, real-time voice interactions",
+      color: "from-teal-400 to-blue-500",
+      gradient: "from-teal-500/20 to-blue-500/20"
+    },
+    {
+      icon: <Video className="w-5 h-5" />,
+      title: "Video Calls",
+      description: "Face-to-face conversations with AI",
+      color: "from-blue-500 to-purple-500",
+      gradient: "from-blue-500/20 to-purple-500/20"
+    },
+    {
+      icon: <Users className="w-5 h-5" />,
+      title: "Character Creation",
+      description: "Design your perfect AI companion",
+      color: "from-purple-500 to-pink-500",
+      gradient: "from-purple-500/20 to-pink-500/20"
+    }
+  ]
+
+  const solutions = [
+    {
+      icon: <Zap className="w-5 h-5" />,
+      title: "Break into the Future",
+      description: "Experience cutting-edge AI technology",
+      href: "/explore",
+      gradient: "from-teal-400 to-blue-500"
+    },
+    {
+      icon: <Clock className="w-5 h-5" />,
+      title: "Reconnect with Past",
+      description: "Revive memories and conversations",
+      href: "/characters",
+      gradient: "from-amber-400 to-orange-500"
+    },
+    {
+      icon: <BookOpen className="w-5 h-5" />,
+      title: "Learn from Legends",
+      description: "Gain wisdom from great minds",
+      href: "/create",
+      gradient: "from-purple-400 to-pink-500"
+    }
+  ]
+
+  const advancedFeatures = [
+    {
+      icon: <Cpu className="w-5 h-5" />,
+      title: "Advanced AI Processing",
+      description: "State-of-the-art neural networks",
+      color: "from-teal-400 to-blue-500"
+    },
+    {
+      icon: <Fingerprint className="w-5 h-5" />,
+      title: "Biometric Security",
+      description: "Enterprise-grade voice recognition",
+      color: "from-blue-500 to-purple-500"
+    },
+    {
+      icon: <Satellite className="w-5 h-5" />,
+      title: "Global Infrastructure",
+      description: "Distributed servers worldwide",
+      color: "from-purple-500 to-pink-500"
+    }
+  ]
 
   return (
-    <nav className="sticky top-0 z-50 backdrop-blur-lg bg-gray-900/60 border-b border-gray-800 shadow-lg">
+    <motion.nav 
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        isScrolled ? 'nav-modern' : 'bg-transparent'
+      }`}
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      transition={{ duration: 0.6, ease: "easeOut" }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link href="/" className="flex-shrink-0 flex items-center">
-              <span className="relative text-xl font-bold text-white overflow-hidden group">
-                <span className="z-10 relative">AI Characters</span>
-                <span className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-purple-500 to-pink-600 opacity-0 group-hover:opacity-80 blur-lg group-hover:blur-md transition-all duration-500 scale-110 group-hover:scale-100"></span>
-                <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-600 to-pink-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></span>
-              </span>
-            </Link>
-            <div className="hidden sm:ml-8 sm:flex sm:space-x-4">
-              <NavLink href="/">Home</NavLink>
-              {isAuthenticated && (
-                <>
-                  <NavLink href="/characters">Characters</NavLink>
-                  <NavLink href="/create">Create Character</NavLink>
-                </>
-              )}
-            </div>
-          </div>
-          <div className="hidden sm:ml-6 sm:flex sm:items-center">
-            {isAuthenticated ? (
-              <div className="relative" ref={userMenuRef}>
-                <button
-                  onClick={() => setShowUserDropdown(!showUserDropdown)}
-                  className="flex items-center space-x-2 bg-gray-800/50 hover:bg-gray-700/70 text-white px-4 py-2 rounded-full transition-all duration-200 border border-transparent hover:border-indigo-500/30"
+        <div className="flex justify-between items-center h-16">
+          {/* Logo */}
+          <Link href="/" className="flex items-center space-x-2 group" aria-label="Go to homepage">
+            <motion.div 
+              className="w-10 h-10 rounded-xl bg-gradient-to-r from-teal-400 to-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform duration-300"
+              whileHover={{ rotate: 5 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Sparkles className="w-6 h-6 text-white" />
+            </motion.div>
+            <motion.span 
+              className="text-xl font-bold text-gradient group-hover:text-white transition-colors"
+              whileHover={{ scale: 1.05 }}
+            >
+              Aletheia
+            </motion.span>
+          </Link>
+
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center space-x-8">
+            {/* Features Dropdown */}
+            <div 
+              className="relative group"
+              onMouseEnter={() => setActiveDropdown('features')}
+              onMouseLeave={() => setActiveDropdown(null)}
+            >
+              <motion.button 
+                className="flex items-center space-x-1 text-gray-300 hover:text-white transition-colors py-2"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span>Features</span>
+                <motion.div
+                  animate={{ rotate: activeDropdown === 'features' ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
                 >
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center">
-                    <span className="text-sm font-bold">{user?.name?.charAt(0).toUpperCase()}</span>
-                  </div>
-                  <span className="text-sm font-medium max-w-[100px] truncate">{user?.name}</span>
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    className={`h-4 w-4 transition-transform duration-200 ${showUserDropdown ? 'rotate-180' : ''}`} 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
+                  <ChevronDown className="w-4 h-4" />
+                </motion.div>
+              </motion.button>
+              
+              <AnimatePresence>
+                {activeDropdown === 'features' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute top-full left-0 mt-2 w-80"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                
-                <AnimatePresence>
-                  {showUserDropdown && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.2 }}
-                      className="absolute right-0 mt-2 w-48 bg-gray-800/80 backdrop-blur-lg rounded-xl overflow-hidden shadow-lg border border-gray-700 z-50"
-                    >
-                      <div className="py-2 px-4 border-b border-gray-700 bg-gradient-to-r from-indigo-500/10 to-purple-500/10">
-                        <p className="text-sm text-white font-medium truncate">{user?.email}</p>
+                    <div className="glass-card p-6 rounded-2xl relative overflow-hidden">
+                      {/* Animated background */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 to-blue-500/5" />
+                      
+                      <div className="relative z-10">
+                        <div className="grid gap-4">
+                          {features.map((feature, index) => (
+                            <motion.div
+                              key={index}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: index * 0.1 }}
+                              className="flex items-start space-x-3 p-3 rounded-xl hover:bg-white/5 transition-colors group"
+                            >
+                              <motion.div 
+                                className={`w-10 h-10 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                                whileHover={{ rotate: 5 }}
+                              >
+                                {feature.icon}
+                              </motion.div>
+                              <div>
+                                <h4 className="font-semibold text-white mb-1 group-hover:text-gradient transition-colors">
+                                  {feature.title}
+                                </h4>
+                                <p className="text-sm text-gray-400">{feature.description}</p>
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                        
+                        {/* Advanced features preview */}
+                        <div className="mt-4 pt-4 border-t border-white/10">
+                          <div className="grid grid-cols-3 gap-2">
+                            {advancedFeatures.map((feature, index) => (
+                              <motion.div
+                                key={index}
+                                className="text-center p-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                              >
+                                <div className={`w-6 h-6 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center mx-auto mb-1`}>
+                                  {feature.icon}
+                                </div>
+                                <span className="text-xs text-gray-400">{feature.title}</span>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <div className="py-1">
-                        <Link
-                          href="/profile"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-indigo-600/20 transition-colors duration-150"
-                          onClick={() => setShowUserDropdown(false)}
-                        >
-                          Profile
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Solutions Dropdown */}
+            <div 
+              className="relative group"
+              onMouseEnter={() => setActiveDropdown('solutions')}
+              onMouseLeave={() => setActiveDropdown(null)}
+            >
+              <motion.button 
+                className="flex items-center space-x-1 text-gray-300 hover:text-white transition-colors py-2"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span>Solutions</span>
+                <motion.div
+                  animate={{ rotate: activeDropdown === 'solutions' ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </motion.div>
+              </motion.button>
+              
+              <AnimatePresence>
+                {activeDropdown === 'solutions' && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute top-full left-0 mt-2 w-80"
+                  >
+                    <div className="glass-card p-6 rounded-2xl relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 to-pink-500/5" />
+                      
+                      <div className="relative z-10">
+                        <div className="grid gap-4">
+                          {solutions.map((solution, index) => (
+                            <Link key={index} href={solution.href}>
+                              <motion.div
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.1 }}
+                                className="flex items-start space-x-3 p-3 rounded-xl hover:bg-white/5 transition-colors group"
+                                whileHover={{ x: 5 }}
+                              >
+                                <motion.div 
+                                  className={`w-10 h-10 rounded-lg bg-gradient-to-r ${solution.gradient} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}
+                                  whileHover={{ rotate: 5 }}
+                                >
+                                  {solution.icon}
+                                </motion.div>
+                                <div>
+                                  <h4 className="font-semibold text-white mb-1 group-hover:text-gradient transition-colors">
+                                    {solution.title}
+                                  </h4>
+                                  <p className="text-sm text-gray-400">{solution.description}</p>
+                                </div>
+                                <motion.div
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                  initial={{ x: -10 }}
+                                  animate={{ x: 0 }}
+                                >
+                                  <ArrowRight className="w-4 h-4 text-teal-400" />
+                                </motion.div>
+                              </motion.div>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <Link href="/explore" className="text-gray-300 hover:text-white transition-colors py-2">Explore</Link>
+            <Link href="/characters" className="text-gray-300 hover:text-white transition-colors py-2">Characters</Link>
+            <Link href="/create" className="text-gray-300 hover:text-white transition-colors py-2">Create</Link>
+            
+            <Link href="/pricing">
+              <motion.span 
+                className="text-gray-300 hover:text-white transition-colors cursor-pointer"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                Pricing
+              </motion.span>
+            </Link>
+          </div>
+
+          {/* Right Side */}
+          <div className="flex items-center space-x-4">
+            {/* Search */}
+            <motion.button 
+              className="hidden md:flex items-center justify-center w-10 h-10 rounded-xl glass-card hover:bg-white/10 transition-colors"
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Search className="w-5 h-5 text-gray-300" />
+            </motion.button>
+
+            {/* Notifications */}
+            <motion.button 
+              className="hidden md:flex items-center justify-center w-10 h-10 rounded-xl glass-card hover:bg-white/10 transition-colors relative"
+              whileHover={{ scale: 1.1, rotate: -5 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Bell className="w-5 h-5 text-gray-300" />
+              <motion.div 
+                className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-r from-teal-400 to-blue-500 rounded-full"
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+            </motion.button>
+
+            {/* User Menu */}
+            {isAuthenticated ? (
+              <div className="relative">
+                <motion.button
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="flex items-center space-x-2 glass-card px-4 py-2 rounded-xl hover:bg-white/10 transition-colors"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <motion.div 
+                    className="w-8 h-8 rounded-lg bg-gradient-to-r from-teal-400 to-blue-500 flex items-center justify-center"
+                    whileHover={{ rotate: 5 }}
+                  >
+                    <User className="w-4 h-4 text-white" />
+                  </motion.div>
+                  <span className="text-sm font-medium text-white hidden sm:block">
+                    {user?.name || 'User'}
+                  </span>
+                  <motion.div
+                    animate={{ rotate: isDropdownOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <ChevronDown className="w-4 h-4 text-gray-300" />
+                  </motion.div>
+                </motion.button>
+
+                <AnimatePresence>
+                  {isDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.2 }}
+                      className="absolute right-0 mt-2 w-64 glass-card rounded-2xl p-2"
+                    >
+                      <div className="space-y-1">
+                        <Link href="/profile">
+                          <motion.button 
+                            className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors text-left"
+                            whileHover={{ x: 5 }}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <User className="w-5 h-5 text-gray-300" />
+                            <span className="text-white">Profile</span>
+                          </motion.button>
                         </Link>
-                        <Link
-                          href="/settings"
-                          className="block px-4 py-2 text-sm text-gray-300 hover:bg-indigo-600/20 transition-colors duration-150"
-                          onClick={() => setShowUserDropdown(false)}
-                        >
-                          Settings
+                        <Link href="/settings">
+                          <motion.button 
+                            className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors text-left"
+                            whileHover={{ x: 5 }}
+                            whileTap={{ scale: 0.95 }}
+                          >
+                            <Settings className="w-5 h-5 text-gray-300" />
+                            <span className="text-white">Settings</span>
+                          </motion.button>
                         </Link>
-                        <button
+                        <div className="border-t border-white/10 my-2"></div>
+                        <motion.button
                           onClick={handleLogout}
-                          className="block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/20 transition-colors duration-150"
+                          className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl hover:bg-white/10 transition-colors text-left"
+                          whileHover={{ x: 5 }}
+                          whileTap={{ scale: 0.95 }}
                         >
-                          Logout
-                        </button>
+                          <LogOut className="w-5 h-5 text-gray-300" />
+                          <span className="text-white">Logout</span>
+                        </motion.button>
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
             ) : (
-              <div className="flex items-center space-x-4">
-                <Link 
-                  href="/login"
-                  className="text-gray-300 hover:text-white text-sm font-medium relative overflow-hidden group"
-                >
-                  <span className="relative z-10">Login</span>
-                  <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></span>
+              <div className="hidden md:flex items-center space-x-3">
+                <Link href="/login">
+                  <motion.button 
+                    className="text-gray-300 hover:text-white transition-colors px-4 py-2"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Login
+                  </motion.button>
                 </Link>
-                <Link 
-                  href="/signup"
-                  className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2 rounded-md text-sm font-medium shadow-md hover:shadow-lg transition-all duration-200 transform hover:-translate-y-0.5"
-                >
-                  Sign Up
+                <Link href="/signup">
+                  <motion.button 
+                    className="btn-primary"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Get Started
+                  </motion.button>
                 </Link>
               </div>
             )}
-          </div>
-          <div className="-mr-2 flex items-center sm:hidden">
-            <button
+
+            {/* Mobile Menu Button */}
+            <motion.button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="bg-gray-800/50 hover:bg-gray-700 p-2 rounded-md text-gray-400 hover:text-white transition-colors"
+              className="md:hidden glass-card p-2 rounded-xl hover:bg-white/10 transition-colors"
+              whileHover={{ scale: 1.1, rotate: 5 }}
+              whileTap={{ scale: 0.9 }}
             >
-              <span className="sr-only">Open main menu</span>
-              {!isMenuOpen ? (
-                <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              ) : (
-                <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              )}
-            </button>
+              <AnimatePresence mode="wait">
+                {isMenuOpen ? (
+                  <motion.div
+                    key="close"
+                    initial={{ rotate: -90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: 90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <X className="w-6 h-6 text-white" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="menu"
+                    initial={{ rotate: 90, opacity: 0 }}
+                    animate={{ rotate: 0, opacity: 1 }}
+                    exit={{ rotate: -90, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Menu className="w-6 h-6 text-white" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.button>
           </div>
         </div>
       </div>
 
-      {/* Mobile menu */}
+      {/* Mobile Menu */}
       <AnimatePresence>
         {isMenuOpen && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="sm:hidden bg-gray-900/90 backdrop-blur-lg overflow-hidden"
+            transition={{ duration: 0.3 }}
+            className="md:hidden glass-card border-t border-white/10"
           >
-            <div className="pt-2 pb-3 space-y-1 px-2">
-              <Link
-                href="/"
-                className="block px-3 py-2 rounded-md text-base font-medium text-white bg-gradient-to-r hover:from-indigo-600/20 hover:to-purple-600/20 transition-colors duration-200"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Home
-              </Link>
-              {isAuthenticated && (
-                <>
-                  <Link
-                    href="/characters"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white bg-gradient-to-r hover:from-indigo-600/20 hover:to-purple-600/20 transition-colors duration-200"
-                    onClick={() => setIsMenuOpen(false)}
+            <div className="px-4 py-6 space-y-4">
+              {/* Mobile Navigation Links */}
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-gray-400 mb-3">Features</div>
+                {features.map((feature, index) => (
+                  <motion.div 
+                    key={index} 
+                    className="flex items-center space-x-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.1 }}
                   >
-                    Characters
-                  </Link>
-                  <Link
-                    href="/create"
-                    className="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white bg-gradient-to-r hover:from-indigo-600/20 hover:to-purple-600/20 transition-colors duration-200"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Create Character
-                  </Link>
-                </>
-              )}
-            </div>
-            <div className="pt-4 pb-3 border-t border-gray-700 bg-gray-800/30">
-              {isAuthenticated ? (
-                <div className="px-3 space-y-1">
-                  <div className="px-3 py-2 flex items-center space-x-3">
-                    <div className="flex-shrink-0">
-                      <div className="h-10 w-10 rounded-full bg-gradient-to-r from-purple-500 to-indigo-600 flex items-center justify-center">
-                        <span className="text-sm font-bold">{user?.name?.charAt(0).toUpperCase()}</span>
-                      </div>
+                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${feature.color} flex items-center justify-center`}>
+                      {feature.icon}
                     </div>
                     <div>
-                      <div className="text-base font-medium text-white">{user?.name}</div>
-                      <div className="text-sm font-medium text-gray-400 truncate max-w-[200px]">{user?.email}</div>
+                      <div className="font-medium text-white">{feature.title}</div>
+                      <div className="text-sm text-gray-400">{feature.description}</div>
                     </div>
-                  </div>
-                  <div className="mt-3 space-y-1 px-2">
-                    <Link
-                      href="/profile"
-                      className="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-                      onClick={() => setIsMenuOpen(false)}
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-gray-400 mb-3">Solutions</div>
+                {solutions.map((solution, index) => (
+                  <Link key={index} href={solution.href}>
+                    <motion.div 
+                      className="flex items-center space-x-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.1 }}
                     >
-                      Profile
-                    </Link>
-                    <Link
-                      href="/settings"
-                      className="block px-3 py-2 rounded-md text-base font-medium text-gray-300 hover:text-white hover:bg-gray-700 transition-colors"
-                      onClick={() => setIsMenuOpen(false)}
-                    >
-                      Settings
-                    </Link>
-                    <button
-                      onClick={handleLogout}
-                      className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-red-400 hover:text-red-300 hover:bg-red-500/20 transition-colors"
-                    >
-                      Logout
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="px-4 flex flex-col space-y-3">
-                  <Link
-                    href="/login"
-                    className="bg-transparent border border-gray-700 text-white px-4 py-2 rounded-md text-base font-medium hover:bg-gray-800 transition-colors duration-200"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Login
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-teal-400 to-blue-500 flex items-center justify-center">
+                        {solution.icon}
+                      </div>
+                      <div>
+                        <div className="font-medium text-white">{solution.title}</div>
+                        <div className="text-sm text-gray-400">{solution.description}</div>
+                      </div>
+                    </motion.div>
                   </Link>
-                  <Link
-                    href="/signup"
-                    className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-md text-base font-medium hover:from-indigo-700 hover:to-purple-700 transition-colors duration-200"
-                    onClick={() => setIsMenuOpen(false)}
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <Link href="/explore">
+                  <motion.div 
+                    className="flex items-center space-x-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
+                    whileHover={{ x: 5 }}
                   >
-                    Sign Up
+                    <Compass className="w-5 h-5 text-gray-300" />
+                    <span className="text-white">Explore</span>
+                  </motion.div>
+                </Link>
+                <Link href="/pricing">
+                  <motion.div 
+                    className="flex items-center space-x-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
+                    whileHover={{ x: 5 }}
+                  >
+                    <Crown className="w-5 h-5 text-gray-300" />
+                    <span className="text-white">Pricing</span>
+                  </motion.div>
+                </Link>
+              </div>
+
+              {/* Mobile Auth Buttons */}
+              {!isAuthenticated && (
+                <div className="pt-4 space-y-3">
+                  <Link href="/login">
+                    <motion.button 
+                      className="w-full glass-card py-3 rounded-xl text-white hover:bg-white/10 transition-colors"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      Login
+                    </motion.button>
+                  </Link>
+                  <Link href="/signup">
+                    <motion.button 
+                      className="w-full btn-primary"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      Get Started
+                    </motion.button>
                   </Link>
                 </div>
               )}
@@ -261,6 +598,6 @@ export default function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
-    </nav>
+    </motion.nav>
   )
 } 

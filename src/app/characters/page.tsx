@@ -7,6 +7,7 @@ import { Character } from '@/types/character';
 import { useRouter } from 'next/navigation';
 import { characterApi } from '@/lib/api';
 import { FaPlus, FaSearch } from 'react-icons/fa';
+import { Plus } from 'lucide-react';
 
 export default function CharactersPage() {
   const [allCharacters, setAllCharacters] = useState<Character[]>([]);
@@ -20,21 +21,14 @@ export default function CharactersPage() {
   const [featuredCharacters, setFeaturedCharacters] = useState<Character[]>([]);
   const [popularCharacters, setPopularCharacters] = useState<Character[]>([]);
 
+  const [refreshFlag, setRefreshFlag] = useState(0)
+
   useEffect(() => {
     const fetchCharacters = async () => {
+      setLoading(true)
       try {
-        // Verify if user is logged in
-        const token = localStorage.getItem('auth_token');
-        
-        if (!token) {
-          // Redirect to login if no token found
-          router.push('/login');
-          return;
-        }
-
-        // Use the api module to fetch characters
-        const data = await characterApi.list();
-        setAllCharacters(data);
+        const data = await characterApi.listAll()
+        setAllCharacters(data)
         
         // For demo purposes, categorize characters randomly
         // In a real app, these would come from separate API endpoints or be categorized by the server
@@ -62,10 +56,9 @@ export default function CharactersPage() {
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchCharacters();
-  }, [router]);
+    }
+    fetchCharacters()
+  }, [router, refreshFlag])
   
   // Filter characters based on search query
   const filteredCharacters = allCharacters.filter(char => 
@@ -96,7 +89,7 @@ export default function CharactersPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0d0f17]">
+    <div className="min-h-screen bg-[#0d0f17] relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
           <div>
@@ -152,6 +145,14 @@ export default function CharactersPage() {
                 <span>Create Character</span>
               </Link>
             </div>
+            {/* Floating action button for create */}
+            <button
+              onClick={() => router.push('/create')}
+              className="fixed bottom-8 right-8 z-50 bg-gradient-to-r from-indigo-500 to-teal-500 text-white p-5 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center gap-2"
+              aria-label="Create Character"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
           </div>
         ) : searchQuery ? (
           <div className="mb-12">
@@ -175,6 +176,14 @@ export default function CharactersPage() {
             {renderSection("Popular", popularCharacters, allCharacters.length === 0)}
           </>
         )}
+        {/* Floating button to return to Explore/Dashboard */}
+        <button
+          onClick={() => router.push('/explore')}
+          className="fixed bottom-8 left-8 z-50 bg-gradient-to-r from-teal-500 to-blue-500 text-white p-5 rounded-full shadow-lg hover:scale-110 transition-transform flex items-center gap-2"
+          aria-label="Go to Explore"
+        >
+          <span className="font-bold">Explore</span>
+        </button>
       </div>
     </div>
   );

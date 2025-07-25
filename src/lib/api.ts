@@ -126,99 +126,72 @@ export const authApi = {
 // Character API endpoints
 export const characterApi = {
   create: async (data: CreateCharacterRequest): Promise<Character> => {
-    // Always set is_custom true for created characters
-    data.is_custom = true;
-    console.log('Making API request to:', `${API_BASE_URL}/characters`);
-    console.log('Request data:', data);
-    
+    // Send all fields to backend
+    const payload: any = { ...data };
+    if (data.avatar_url) {
+      payload.avatar = data.avatar_url;
+    }
+    // Debug: log outgoing payload
+    console.log('Character creation payload:', payload);
     try {
       const token = getAuthToken();
       const headers = createHeaders(token);
-      
       let body: string | FormData;
       let requestHeaders = headers;
-      
-      // If there's an avatar file, use FormData
-      if (data.avatar) {
-        // Create a new FormData instance
+      if (payload.avatar) {
         const formData = new FormData();
-        
-        // Convert the image to base64 for more reliable transfer
-        const base64Image = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(data.avatar as File);
-        });
-        
-        // Add all text fields
-        Object.entries(data).forEach(([key, value]) => {
+        Object.entries(payload).forEach(([key, value]) => {
           if (key === 'avatar') {
-            // Skip avatar for now - we'll use the base64 version
-          } else if (key === 'tags' && Array.isArray(value)) {
-            // Convert tags array to string
+            if (typeof value === 'string') {
+              formData.append('avatar_base64', value);
+              formData.append('avatar_filename', 'avatar.png');
+            } else if (value instanceof File) {
+              formData.append('avatar', value);
+              formData.append('avatar_filename', value.name);
+            }
+          } else if (['traits', 'goals', 'fears', 'relationships'].includes(key) && Array.isArray(value)) {
             formData.append(key, JSON.stringify(value));
           } else {
             formData.append(key, String(value));
           }
         });
-        
-        // Add the avatar as base64 string
-        formData.append('avatar_base64', base64Image);
-        formData.append('avatar_filename', (data.avatar as File).name);
-        
-        // Also add the regular file as fallback
-        formData.append('avatar', data.avatar);
-        
         body = formData;
-        // Remove Content-Type header for FormData
         requestHeaders.delete('Content-Type');
       } else {
-        // Use JSON if no file
-        body = JSON.stringify(data);
+        body = JSON.stringify(payload);
       }
-      
-      const response = await fetch(`${API_BASE_URL}/characters`, {
+      const res = await fetch(`${API_BASE_URL}/characters`, {
         method: 'POST',
         headers: requestHeaders,
         body,
       });
-
-      console.log('Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('API Error Response:', errorData);
-        throw new Error(errorData.error || `Failed to create character: ${response.status}`);
+      if (!res.ok) {
+        let msg = 'Failed to create character';
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
       }
-
-      const result = await response.json();
-      console.log('API Response:', result);
-      return result;
-    } catch (error) {
-      console.error('API Call Error:', error);
-      throw error;
+      return res.json();
+    } catch (err: any) {
+      throw new Error(err.message || 'Failed to create character');
     }
   },
 
   list: async (): Promise<Character[]> => {
+    // Legacy: fetches only characters with conversations
     const token = getAuthToken();
     const headers = createHeaders(token);
-    
-    const response = await fetch(`${API_BASE_URL}/characters`, {
-      ...baseFetchConfig,
-      headers
-    });
+    const res = await fetch(`${API_BASE_URL}/characters`, { headers });
+    if (!res.ok) throw new Error('Failed to fetch characters');
+    return res.json();
+  },
 
-    if (response.status === 401) {
-      throw new Error('401: User not authenticated');
-    }
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error || 'Failed to fetch characters');
-    }
-
-    return response.json();
+  listAll: async (): Promise<Character[]> => {
+    // New: fetches all characters
+    const token = getAuthToken();
+    const headers = createHeaders(token);
+    const res = await fetch(`${API_BASE_URL}/characters/all`, { headers });
+    if (!res.ok) throw new Error('Failed to fetch all characters');
+    return res.json();
   },
 
   get: async (id: string): Promise<Character> => {
